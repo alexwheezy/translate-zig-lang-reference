@@ -254,7 +254,7 @@ type: anyerror!i32
 value: 1234
 ```
 
-**<p style="text-align:center">Primitive Types</p>**
+**<center>Primitive Types</center>**
 |Type|C Equivalent|Description
 |---|---|---|
 | <span style="color:blue">`i8`</span>| `int8_t` | signed 8-bit integer
@@ -297,7 +297,7 @@ value: 1234
 используя идентификатор i или u, за которым следуют цифры. Например, идентификатор i7 относится к 7-разрядному целому
 числу со знаком. Максимально допустимая разрядность для целочисленного типа равна 65535.
 
-**<p style="text-align:center">Primitive Values</p>**
+**<center>Primitive Values</center>**
 |Name|Description|
 |---|---|
 | <span style="color:red">`true`</span> and <span style="color:red">`false`</span> | <span style="color:blue">`bool`</span> values |
@@ -361,7 +361,7 @@ true
 0x9f
 ```
 
-**<p style="text-align:center">Escape Sequences</p>**
+**<center>Escape Sequences</center>**
 |Escape Sequence|Name|
 |---|---|
 |`\n` |Newline
@@ -478,7 +478,7 @@ $ ./assign_undefined
 означает "Не имеющее смысла значение". Использование этого значения может привести к ошибке. Значение будет
 неиспользуемым или перезаписанным перед использованием.
 
-В режиме отладки **Zig** записывает <span style="color:red">`0xaa`</span> байт в неопределенную память. Это делается для
+В режиме отладки **Zig** записывает <font color="red">`0xaa`</font> байт в неопределенную память. Это делается для
 раннего выявления ошибок и помогает обнаружить использование неопределенной памяти в отладчике. Однако такое поведение
 является только особенностью реализации, а не семантикой языка, поэтому не гарантируется, что оно будет наблюдаться в
 коде.
