@@ -21,6 +21,8 @@
 
 Этот HTML-документ не зависит от внешних файлов, поэтому вы можете использовать его в автономном режиме.
 
+------------
+
 ### Стандартная библиотека **Zig**
 
 Стандартная библиотека **Zig** имеет собственную документацию.
@@ -29,7 +31,9 @@
 создавать программы или библиотеки. В этой документации вы увидите множество примеров стандартной библиотеки **Zig**,
 используемых в этой документации. Чтобы узнать больше о стандартной библиотеке **Zig**, перейдите по ссылке выше.
 
-### Hello World
+------------
+
+### Привет, Мир!
 
 ```zig
 const std = @import("std");
@@ -64,6 +68,7 @@ Hello, World!
 
 В этом случае символ ! может быть опущен в возвращаемом типе, поскольку функция не возвращает ошибок.
 
+------------
 
 ### Комментарии
 
@@ -169,6 +174,7 @@ const S = struct {
     //! эти комментарии игнорируются.
 };
 ```
+------------
 
 ### Значения
 
@@ -257,41 +263,41 @@ value: 1234
 **<center>Primitive Types</center>**
 |Type|C Equivalent|Description
 |---|---|---|
-| <span style="color:blue">`i8`</span>| `int8_t` | signed 8-bit integer
-| <span style="color:blue">`u8`</span>| `uint8_t` | unsigned 8-bit integer
-| <span style="color:blue">`i16`</span>| `int16_t` | signed 16-bit integer |
-| <span style="color:blue">`u16`</span>| `uint16_t` | unsigned 16-bit integer
-| <span style="color:blue">`i32`</span>| `int32_t` | signed 32-bit integer
-| <span style="color:blue">`u32`</span>| `uint32_t` | unsigned 32-bit integer
-| <span style="color:blue">`i64`</span>| `int64_t` | signed 64-bit integer
-| <span style="color:blue">`u64`</span>| `uint64_t` | unsigned 64-bit integer
-| <span style="color:blue">`i128`</span>| `__int128` | signed 128-bit integer
-| <span style="color:blue">`u128`</span>| `unsigned __int128` | unsigned 128-bit integer
-| <span style="color:blue">`isize`</span>| `intptr_t` | signed pointer sized integer
-| <span style="color:blue">`usize`</span>| `uintptr_t`, `size_t` | unsigned pointer sized integer. Also see #5185
-| <span style="color:blue">`c_char`</span>| `char` | for ABI compatibility with C
-| <span style="color:blue">`c_short`</span>| `short` | for ABI compatibility with C
-| <span style="color:blue">`c_ushort`</span>| `unsigned short` | for ABI compatibility with C
-| <span style="color:blue">`c_int`</span> | `int` | for ABI compatibility with C
-| <span style="color:blue">`c_uint`</span>| `unsigned int` | for ABI compatibility with C
-| <span style="color:blue">`c_long`</span> | `long` | for ABI compatibility with C
-| <span style="color:blue">`c_ulong`</span>| `unsigned long` | for ABI compatibility with C
-| <span style="color:blue">`c_longlong`</span>| `long long` | for ABI compatibility with C
-| <span style="color:blue">`c_ulonglong`</span>| `unsigned long long` | for ABI compatibility with C
-| <span style="color:blue">`c_longdouble`</span>| `long double` | for ABI compatibility with C
-| <span style="color:blue">`f16`</span>| `_Float16` | 16-bit floating point (10-bit mantissa) IEEE-754-2008 binary16
-| <span style="color:blue">`f32`</span>| `float` | 32-bit floating point (23-bit mantissa) IEEE-754-2008 binary32
-| <span style="color:blue">`f64`</span>| `double` | 64-bit floating point (52-bit mantissa) IEEE-754-2008 binary64
-| <span style="color:blue">`f80`</span>| `double` | 80-bit floating point (64-bit mantissa) IEEE-754-2008 80-bit extended precision
-| <span style="color:blue">`f128`</span>| `_Float128` | 128-bit floating point (112-bit mantissa) IEEE-754-2008 binary128
-| <span style="color:blue">`bool`</span>| `bool` | true or false
-| <span style="color:blue">`anytype`</span>| `void` | Used for type-erased pointers.
-| <span style="color:blue">`void`</span>| `(none)` |  Always the value void{}
-| <span style="color:blue">`noreturn`</span>| `(none)` | the type of break, continue, return, unreachable, and while (true) {}
-| <span style="color:blue">`type`</span>| `(none)` | the type of types
-| <span style="color:blue">`anyerror`</span>| `(none)` | an error code
-| <span style="color:blue">`comptime_int`</span>| `(none)` | Only allowed for comptime-known values. The type of integer literals.
-| <span style="color:blue">`comptime_float`</span>| `(none)` | Only allowed for comptime-known values. The type of float literals.
+| <font color="blue">`i8`</font>| `int8_t` | signed 8-bit integer
+| <font color="blue">`u8`</font>| `uint8_t` | unsigned 8-bit integer
+| <font color="blue">`i16`</font>| `int16_t` | signed 16-bit integer |
+| <font color="blue">`u16`</font>| `uint16_t` | unsigned 16-bit integer
+| <font color="blue">`i32`</font>| `int32_t` | signed 32-bit integer
+| <font color="blue">`u32`</font>| `uint32_t` | unsigned 32-bit integer
+| <font color="blue">`i64`</font>| `int64_t` | signed 64-bit integer
+| <font color="blue">`u64`</font>| `uint64_t` | unsigned 64-bit integer
+| <font color="blue">`i128`</font>| `__int128` | signed 128-bit integer
+| <font color="blue">`u128`</font>| `unsigned __int128` | unsigned 128-bit integer
+| <font color="blue">`isize`</font>| `intptr_t` | signed pointer sized integer
+| <font color="blue">`usize`</font>| `uintptr_t`, `size_t` | unsigned pointer sized integer. Also see #5185
+| <font color="blue">`c_char`</font>| `char` | for ABI compatibility with C
+| <font color="blue">`c_short`</font>| `short` | for ABI compatibility with C
+| <font color="blue">`c_ushort`</font>| `unsigned short` | for ABI compatibility with C
+| <font color="blue">`c_int`</font> | `int` | for ABI compatibility with C
+| <font color="blue">`c_uint`</font>| `unsigned int` | for ABI compatibility with C
+| <font color="blue">`c_long`</font> | `long` | for ABI compatibility with C
+| <font color="blue">`c_ulong`</font>| `unsigned long` | for ABI compatibility with C
+| <font color="blue">`c_longlong`</font>| `long long` | for ABI compatibility with C
+| <font color="blue">`c_ulonglong`</font>| `unsigned long long` | for ABI compatibility with C
+| <font color="blue">`c_longdouble`</font>| `long double` | for ABI compatibility with C
+| <font color="blue">`f16`</font>| `_Float16` | 16-bit floating point (10-bit mantissa) IEEE-754-2008 binary16
+| <font color="blue">`f32`</font>| `float` | 32-bit floating point (23-bit mantissa) IEEE-754-2008 binary32
+| <font color="blue">`f64`</font>| `double` | 64-bit floating point (52-bit mantissa) IEEE-754-2008 binary64
+| <font color="blue">`f80`</font>| `double` | 80-bit floating point (64-bit mantissa) IEEE-754-2008 80-bit extended precision
+| <font color="blue">`f128`</font>| `_Float128` | 128-bit floating point (112-bit mantissa) IEEE-754-2008 binary128
+| <font color="blue">`bool`</font>| `bool` | true or false
+| <font color="blue">`anytype`</font>| `void` | Used for type-erased pointers.
+| <font color="blue">`void`</font>| `(none)` |  Always the value void{}
+| <font color="blue">`noreturn`</font>| `(none)` | the type of break, continue, return, unreachable, and while (true) {}
+| <font color="blue">`type`</font>| `(none)` | the type of types
+| <font color="blue">`anyerror`</font>| `(none)` | an error code
+| <font color="blue">`comptime_int`</font>| `(none)` | Only allowed for comptime-known values. The type of integer literals.
+| <font color="blue">`comptime_float`</font>| `(none)` | Only allowed for comptime-known values. The type of float literals.
 
 В дополнение к целочисленным типам, указанным выше, можно использовать ссылки на целые числа произвольной разрядности,
 используя идентификатор i или u, за которым следуют цифры. Например, идентификатор i7 относится к 7-разрядному целому
@@ -300,9 +306,9 @@ value: 1234
 **<center>Primitive Values</center>**
 |Name|Description|
 |---|---|
-| <span style="color:red">`true`</span> and <span style="color:red">`false`</span> | <span style="color:blue">`bool`</span> values |
-| <span style="color:red">`null`</span> | used to set an optional type to <span style="color:red">`null`</span> |
-| <span style="color:red">`undefined`</span> | used to leave a value unspecified |
+| <font color="red">`true`</font> and <font color="red">`false`</font> | <font color="blue">`bool`</font> values |
+| <font color="red">`null`</font> | used to set an optional type to <font color="red">`null`</font> |
+| <font color="red">`undefined`</font> | used to leave a value unspecified |
 
 
 #### Строковые литералы и литералы с кодовой точкой в Юникоде
@@ -361,6 +367,8 @@ true
 0x9f
 ```
 
+##### Управляющие последовательности
+
 **<center>Escape Sequences</center>**
 |Escape Sequence|Name|
 |---|---|
@@ -373,9 +381,9 @@ true
 |`\xNN` | hexadecimal 7-bit byte value (2 digits)
 |`\u{NNNNNN}` | hexadecimal Unicode code point UTF-8 encoded (1 or more digits)
 
-Note that the maximum valid Unicode point is <span style="color:red">`0x10ffff`</span>.
+Note that the maximum valid Unicode point is <font color="red">`0x10ffff`</font>.
 
-#### Многострочные строковые литералы
+##### Многострочные строковые литералы
 
 Многострочные строковые литералы не имеют экранирующих элементов и могут занимать несколько строк. Чтобы начать
 многострочный строковый литерал, используйте символ \\. Как и в случае с комментарием, строковый литерал продолжается до
@@ -401,10 +409,10 @@ const hello_world_in_c =
 const x = 1234;
 
 fn foo() void {
-    // It works at file scope as well as inside functions.
+    // Он работает как в области действия файла, так и внутри функций.
     const y = 5678;
 
-    // Once assigned, an identifier cannot be changed.
+    // После присваивания идентификатор не может быть изменен.
     y += 1;
 }
 
@@ -422,7 +430,7 @@ referenced by:
     callMain: /home/andy/src/zig/lib/std/start.zig:514:17
     remaining reference traces hidden; use '-freference-trace' to see all reference traces
 ```
-значение `const` применяется ко всем байтам к которым непосредственно обращается идентификатор. Указатели имеют свою
+Значение `const` применяется ко всем байтам к которым непосредственно обращается идентификатор. Указатели имеют свою
 собственную константу.
 
 Если вам нужна переменная которую вы можете изменять, используйте ключевое слово `var`:
@@ -456,7 +464,9 @@ $ zig build-exe var_must_be_initialized.zig
     var x: i32;
 ```
 
-Используйте <span style="color:red">`undefined`</span> чтобы оставить переменные неинициализированными:
+##### Неопределенный
+
+Используйте <font color="red">`undefined`</font> чтобы оставить переменные неинициализированными:
 ```zig
 const print = @import("std").debug.print;
 
@@ -472,9 +482,9 @@ $ ./assign_undefined
 1
 ```
 
-Значение <span style="color:red">`undefined`</span> может быть приведено к любому типу. Как только это произойдет, уже
-невозможно будет определить, что значение не определено. Значение <span style="color:red">`undefined`</span> может быть
-любым, даже бессмысленным в соответствии с типом. В переводе на английский <span style="color:red">`undefined`</span>
+Значение <font color="red">`undefined`</font> может быть приведено к любому типу. Как только это произойдет, уже
+невозможно будет определить, что значение не определено. Значение <font color="red">`undefined`</font> может быть
+любым, даже бессмысленным в соответствии с типом. В переводе на английский <font color="red">`undefined`</font>
 означает "Не имеющее смысла значение". Использование этого значения может привести к ошибке. Значение будет
 неиспользуемым или перезаписанным перед использованием.
 
@@ -482,3 +492,270 @@ $ ./assign_undefined
 раннего выявления ошибок и помогает обнаружить использование неопределенной памяти в отладчике. Однако такое поведение
 является только особенностью реализации, а не семантикой языка, поэтому не гарантируется, что оно будет наблюдаться в
 коде.
+
+------------
+
+### Тестирование в Zig
+
+Код, написанный в рамках одного или нескольких тестовых объявлений может быть использован для обеспечения соответствия
+поведения ожиданиям программы:
+
+```zig
+const std = @import("std");
+
+test "expect addOne adds one to 41" {
+
+    // Стандартная библиотека содержит полезные функции, помогающие создавать тесты.
+    // `expect` - это функция, которая проверяет, что ее аргумент равен true.
+    // Она вернет ошибку, если ее аргумент равен false, что указывает на сбой.
+    // `try` используется для возврата ошибки тестировщику, чтобы уведомить его о том, что тест не прошел.
+    try std.testing.expect(addOne(41) == 42);
+}
+
+test addOne {
+    // Имя теста также может быть записано с использованием идентификатора.
+    // Это тестовый документ, который служит документацией для `addOne`.
+    try std.testing.expect(addOne(41) == 42);
+}
+
+/// Функция `addOne` добавляет единицу к числу, указанному в качестве ее аргумента.
+fn addOne(number: i32) i32 {
+    return number + 1;
+}
+```
+```bash
+$ zig test testing_introduction.zig
+1/2 testing_introduction.test.expect addOne adds one to 41...OK
+2/2 testing_introduction.decltest.addOne...OK
+All 2 tests passed.
+```
+
+Пример кода testing_introduction.zig проверяет функцию `addOne`, чтобы убедиться, что она возвращает значение 42 при
+входных данных 41. С точки зрения этого теста, функция `addOne` является тестируемым кодом.
+
+`zig test` - это инструмент, который создает и запускает тестовую сборку. По умолчанию он создает и запускает исполняемую
+программу, используя средство запуска тестов по умолчанию предоставляемое стандартной библиотекой **Zig**, в качестве
+основной точки входа. Во время сборки объявления тестов найденные при разрешении данного исходного файла **Zig**,
+включаются в программу тестирования по умолчанию для запуска и составления отчета.
+
+>В этой документации рассматриваются возможности программы запуска тестов по умолчанию, предоставляемой стандартной
+>библиотекой **Zig**. Ее исходный код находится в lib/test_runner.zig.
+
+В выводе командной строки, показанном выше, после команды `zig test` отображаются две строки. Программа тестирования по
+умолчанию выводит эти строки со стандартной ошибкой:
+**<br>`1/2 testing_introduction.test.expect addOne adds one to 41...`<br>**
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Строки, подобные этой, указывают, какой тест из
+общего числа тестов выполняется. В данном случае 1/2 означает, что выполняется первый тест из общего числа двух тестов.
+Обратите внимание, что когда в терминал выводится стандартная ошибка программы test runner, эти строки очищаются при
+успешном завершении теста.
+**<br>`2/2 testing_introduction.decltest.addOne...`<br>**
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Когда имя теста является идентификатором, программа
+тестирования по умолчанию использует текст decltest вместо test. **<br>`All 2 tests passed.`<br>**
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;В этой строке указано общее количество пройденных
+тестов.
+
+#### Объявления тестов
+
+Объявления тестов содержат ключевое слово `test`, за которым следует необязательное имя, записанное в виде строкового
+литерала или идентификатора, а затем блок, содержащий любой допустимый **Zig**-код, который разрешен в функции.
+
+Тестовые блоки без имени всегда выполняются во время сборки тестов и не подлежат пропуску тестов.
+
+Объявления тестов похожи на функции: у них есть тип возвращаемого значения и блок кода. Неявный тип возвращаемого
+значения теста - это тип объединения ошибок `anyerror!void`, и его нельзя изменить. Если исходный файл **Zig** не
+создается с помощью `zig test tool`, объявления тестов не включаются в сборку.
+
+Объявления тестов могут быть записаны в том же файле, в котором записан тестируемый код, или в отдельном исходном файле
+**Zig**. Поскольку тестовые объявления являются объявлениями верхнего уровня, они не зависят от порядка выполнения и
+могут быть написаны до или после тестируемого кода.
+
+##### Тестирование документации
+
+Тестовые объявления именуемые с использованием идентификатора являются тестами doctests. Идентификатор должен
+ссылаться на другое объявление в области видимости. Тест doctest, как и комментарий к документу, служит документацией
+для соответствующего объявления и будет отображаться в сгенерированной документации для объявления.
+
+Эффективное тестирование должно быть автономным и сосредоточенным на тестируемой декларации, отвечать на вопросы,
+которые могут возникнуть у нового пользователя о ее интерфейсе или предполагаемом использовании, избегая при этом
+ненужных или сбивающих с толку деталей. Doctest - это не замена комментария к документу, а скорее дополнение и
+компаньон, предоставляющий тестируемый пример, основанный на коде, проверенный с помощью `zig test`.
+
+#### Ошибки в тестах
+
+Программа запуска тестов по умолчанию проверяет наличие ошибки возвращенной из теста. Когда тест возвращает ошибку,
+тест считается неудачным и его трассировка возврата ошибки выводится в виде стандартной ошибки. Общее количество ошибок
+будет указано после выполнения всех тестов.
+
+```zig
+const std = @import("std");
+
+test "expect this to fail" {
+    try std.testing.expect(false);
+}
+
+test "expect this to succeed" {
+    try std.testing.expect(true);
+}
+```
+```bash
+$ zig test testing_failure.zig
+1/2 testing_failure.test.expect this to fail...FAIL (TestUnexpectedResult)
+/home/andy/src/zig/lib/std/testing.zig:540:14: 0x103ce3f in expect (test)
+    if (!ok) return error.TestUnexpectedResult;
+             ^
+/home/andy/src/zig/doc/langref/testing_failure.zig:4:5: 0x103cf55 in test.expect this to fail (test)
+    try std.testing.expect(false);
+    ^
+2/2 testing_failure.test.expect this to succeed...OK
+1 passed; 0 skipped; 1 failed.
+error: the following test command failed with exit code 1:
+/home/andy/src/zig/.zig-cache/o/054f0b6f088824f384d1b6c648523593/test
+```
+
+#### Пропуск тестов
+
+Один из способов пропустить тесты - отфильтровать их с помощью параметра командной строки `zig test --test-filter [text]`.
+В результате в тестовую сборку будут включены только те тесты, название которых содержит указанный текст фильтра.
+Обратите внимание, что неименованные тесты запускаются даже при использовании параметра командной строки `--test-filter
+[text]`.
+
+Чтобы программно пропустить тест, сделайте так, чтобы тест возвращал сообщение об ошибке `error.SkipZigTest` и программа
+тестирования по умолчанию будут считать тест пропущенным. После выполнения всех тестов будет сообщено общее количество
+пропущенных тестов.
+
+```zig
+test "this will be skipped" {
+    return error.SkipZigTest;
+}
+```
+```bash
+$ zig test testing_skip.zig
+1/1 testing_skip.test.this will be skipped...SKIP
+0 passed; 1 skipped; 0 failed.h
+```
+
+#### Сообщение об утечках памяти
+
+Когда код выделяет память с помощью тестового аллокатора стандартной библиотеки **Zig**, `std.testing.allocator`,
+программа тестирования по умолчанию сообщает о любых утечках, обнаруженных при использовании тестового аллокатора:
+
+```zig
+const std = @import("std");
+
+test "detect leak" {
+    var list = std.ArrayList(u21).init(std.testing.allocator);
+    // отсутствует `defer list.deinit();`
+    try list.append('☔');
+
+    try std.testing.expect(list.items.len == 1);
+}
+```
+```bash
+$ zig test testing_detect_leak.zig
+1/1 testing_detect_leak.test.detect leak...OK
+[gpa] (err): memory address 0x7fdbea69e000 leaked:
+/home/andy/src/zig/lib/std/array_list.zig:457:67: 0x104f76e in ensureTotalCapacityPrecise (test)
+                const new_memory = try self.allocator.alignedAlloc(T, alignment, new_capacity);
+                                                                  ^
+/home/andy/src/zig/lib/std/array_list.zig:434:51: 0x1045610 in ensureTotalCapacity (test)
+            return self.ensureTotalCapacityPrecise(better_capacity);
+                                                  ^
+/home/andy/src/zig/lib/std/array_list.zig:483:41: 0x1041fe0 in addOne (test)
+            try self.ensureTotalCapacity(newlen);
+                                        ^
+/home/andy/src/zig/lib/std/array_list.zig:262:49: 0x103ef2d in append (test)
+            const new_item_ptr = try self.addOne();
+                                                ^
+/home/andy/src/zig/doc/langref/testing_detect_leak.zig:6:20: 0x103d172 in test.detect leak (test)
+    try list.append('☔');
+                   ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104c6a0 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x10428bb in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103f429 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103ef91 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+
+All 1 tests passed.
+1 errors were logged.
+1 tests leaked memory.
+error: the following test command failed with exit code 1:
+/home/andy/src/zig/.zig-cache/o/4a17198138bf81bcfabd5652b0d6be24/test
+```
+
+#### Определение тестовой сборки
+
+Используйте переменную времени компиляции `@import("builtin").is_test` для определения тестовой сборки:
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const expect = std.testing.expect;
+
+test "builtin.is_test" {
+    try expect(isATest());
+}
+
+fn isATest() bool {
+    return builtin.is_test;
+}
+```
+```bash
+$ zig test testing_detect_test.zig
+1/1 testing_detect_test.test.builtin.is_test...OK
+All 1 tests passed.
+```
+
+#### Тестовый вывод и ведение журнала
+
+Программа запуска тестов по умолчанию и пространство имен тестирования стандартной библиотеки **Zig** выводят сообщения
+о стандартной ошибке.
+
+#### Пространство имен для тестирования
+
+Пространство имен `testing` стандартной библиотеки **Zig** содержит полезные функции, которые помогут вам создавать
+тесты. В дополнение к функции `expect` в этом документе используется еще несколько функций, как показано на примере
+ниже:
+
+```zig
+const std = @import("std");
+
+test "expectEqual demo" {
+    const expected: i32 = 42;
+    const actual = 42;
+
+    // Первый аргумент `expectEqual` - это известный ожидаемый результат.
+    // Второй аргумент - это результат некоторого выражения.
+    // Тип actual преобразуется в тип expected.
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "expectError demo" {
+    const expected_error = error.DemoError;
+    const actual_error_union: anyerror!void = error.DemoError;
+
+    // `expectError` завершится ошибкой, если фактическая ошибка отличается от
+    // ожидаемой ошибки.
+    try std.testing.expectError(expected_error, actual_error_union);
+}
+```
+```bash
+$ zig test testing_namespace.zig
+1/2 testing_namespace.test.expectEqual demo...OK
+2/2 testing_namespace.test.expectError demo...OK
+All 2 tests passed.
+```
+
+Стандартная библиотека **Zig** также содержит функции для сравнения слайсов, строк и многого другого. Изучите
+остальную часть пространства имен `std.testing` в стандартной библиотеке **Zig** для получения дополнительных функций.
+
+#### Документация по инструменту тестирования
+
+В `zig test` есть несколько параметров командной строки, которые влияют на компиляцию тестов. Полный список приведен в
+разделе `zig test --help`.
