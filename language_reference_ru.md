@@ -759,3 +759,200 @@ All 2 tests passed.
 
 В `zig test` есть несколько параметров командной строки, которые влияют на компиляцию тестов. Полный список приведен в
 разделе `zig test --help`.
+
+------------
+
+### Переменные
+
+Переменная - это единица хранения в памяти.
+
+Как правило, при объявлении переменной предпочтительнее использовать `const`, а не `var`. Это сокращает работу как
+для людей так и для компьютеров при чтении кода и создает больше возможностей для оптимизации.
+
+Ключевое слово `extern` или встроенную функцию `@extern` можно использовать для связывания с переменной, экспортируемой
+из другого объекта. Ключевое слово `export` или встроенную функцию `@export` можно использовать для того, чтобы сделать
+переменную доступной для других объектов во время линковки. В обоих случаях тип переменной должен быть совместим с `C
+ABI`.
+
+#### Идентификаторы
+
+Идентификаторы переменных никогда не должны затенять идентификаторы из внешней области видимости.
+
+Идентификаторы должны начинаться с буквенного символа или символа подчеркивания и за ними может следовать любое
+количество буквенно-цифровых символов или знаков подчеркивания. Они не должны пересекаться с какими-либо ключевыми
+словами.
+
+Если требуется имя, которое не соответствует этим требованиям, например, для связи с внешними библиотеками, можно
+использовать синтаксис `@""`.
+
+```zig
+const @"identifier with spaces in it" = 0xff;
+const @"1SmallStep4Man" = 112358;
+
+const c = @import("std").c;
+pub extern "c" fn @"error"() void;
+pub extern "c" fn @"fstat$INODE64"(fd: c.fd_t, buf: *c.Stat) c_int;
+
+const Color = enum {
+    red,
+    @"really red",
+};
+const color: Color = .@"really red";
+```
+
+#### Переменные уровня контейнера
+
+Переменные уровня контейнера имеют статическое время жизни, не зависят от порядка и лениво анализируются.
+Значением инициализации переменных уровня контейнера неявно является `comptime`. Если переменная уровня контейнера
+равна `const`, то ее значение известно во вренмени компиляции, в противном случае оно известно во время выполнения.
+
+```zig
+var y: i32 = add(10, x);
+const x: i32 = add(12, 34);
+
+test "container level variables" {
+    try expect(x == 46);
+    try expect(y == 56);
+}
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+const std = @import("std");
+const expect = std.testing.expect;
+```
+```bash
+$ zig test test_container_level_variables.zig
+1/1 test_container_level_variables.test.container level variables...OK
+All 1 tests passed.
+```
+
+Переменные уровня контейнера могут быть объявлены внутри `struct`, `union`, `enum` или `opaque`:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "namespaced container level variable" {
+    try expect(foo() == 1235);
+    try expect(foo() == 1236);
+}
+
+const S = struct {
+    var x: i32 = 1234;
+};
+
+fn foo() i32 {
+    S.x += 1;
+    return S.x;
+}
+```
+```bash
+$ zig test test_namespaced_container_level_variable.zig
+1/1 test_namespaced_container_level_variable.test.namespaced container level variable...OK
+All 1 tests passed.
+```
+
+#### Статические локальные переменные
+
+Также возможно иметь локальные переменные со статическим временем жизни, используя контейнеры внутри функций.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "static local variable" {
+    try expect(foo() == 1235);
+    try expect(foo() == 1236);
+}
+
+fn foo() i32 {
+    const S = struct {
+        var x: i32 = 1234;
+    };
+    S.x += 1;
+    return S.x;
+}
+```
+```bash
+$ zig test test_static_local_variable.zig
+1/1 test_static_local_variable.test.static local variable...OK
+All 1 tests passed.
+```
+
+#### Локальные переменные потока
+
+Переменная может быть указана как локальная переменная потока с использованием ключевого слова `threadlocal`, что
+позволяет каждому потоку работать с отдельным экземпляром переменной:
+
+```zig
+const std = @import("std");
+const assert = std.debug.assert;
+
+threadlocal var x: i32 = 1234;
+
+test "thread local storage" {
+    const thread1 = try std.Thread.spawn(.{}, testTls, .{});
+    const thread2 = try std.Thread.spawn(.{}, testTls, .{});
+    testTls();
+    thread1.join();
+    thread2.join();
+}
+
+fn testTls() void {
+    assert(x == 1234);
+    x += 1;
+    assert(x == 1235);
+}
+```
+```bash
+$ zig test test_thread_local_variables.zig
+1/1 test_thread_local_variables.test.thread local storage...OK
+All 1 tests passed.
+```
+Для однопоточных сборок все локальные переменные потока обрабатываются как обычные переменные уровня контейнера.
+
+Локальные переменные потока могут быть не `const`.
+
+#### Локальные переменные
+
+Локальные переменные встречаются внутри функций, блоков `comptime` и блоков `@cImport`.
+
+Если локальная переменная имеет значение `const`, это означает, что после инициализации значение переменной не
+изменится. Если значение инициализации переменной `const` известно в `comptime` контексте то эта переменная также
+известна в `comptime` контексте.
+
+Локальная переменная может быть определена с помощью ключевого слова `comptime`. Это приводит к тому, что значение
+переменной становится известным во время компиляции и все загрузки и сохранения переменной происходят во время
+семантического анализа программы, а не во время выполнения. Все переменные, объявленные в выражении `comptime` неявно
+являются переменными `comptime` контекста.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "comptime vars" {
+    var x: i32 = 1;
+    comptime var y: i32 = 1;
+
+    x += 1;
+    y += 1;
+
+    try expect(x == 2);
+    try expect(y == 2);
+
+    if (y != 2) {
+        // Эта ошибка компиляции никогда не срабатывает, потому что y - это переменная времени компиляции,
+        // и поэтому `y != 2` - это значение времени компиляции, и это значение if вычисляется статически.
+        @compileError("wrong y value");
+    }
+}
+```
+```bash
+$ zig test test_comptime_variables.zig
+1/1 test_comptime_variables.test.comptime vars...OK
+All 1 tests passed.
+```
+
+------------
