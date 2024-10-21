@@ -1145,3 +1145,191 @@ and
 or
 = *= *%= *|= /= %= += +%= +|= -= -%= -|= <<= <<|= >>= &= ^= |=
 ```
+
+### Массивы
+```zig
+const expect = @import("std").testing.expect;
+const assert = @import("std").debug.assert;
+const mem = @import("std").mem;
+
+// массив литералов
+const message = [_]u8{ 'h', 'e', 'l', 'l', 'o' };
+
+// альтернативная инициализация с указанием размера массива
+const alt_message: [5]u8 = .{ 'h', 'e', 'l', 'l', 'o' };
+
+comptime {
+    assert(mem.eql(u8, &message, &alt_message));
+}
+
+// получить размер массива
+comptime {
+    assert(message.len == 5);
+}
+
+// Строковый литерал - это одноэлементный указатель на массив.
+const same_message = "hello";
+
+comptime {
+    assert(mem.eql(u8, &message, same_message));
+}
+
+test "iterate over an array" {
+    var sum: usize = 0;
+    for (message) |byte| {
+        sum += byte;
+    }
+    try expect(sum == 'h' + 'e' + 'l' * 2 + 'o');
+}
+
+// изменяемый массив
+var some_integers: [100]i32 = undefined;
+
+test "modify an array" {
+    for (&some_integers, 0..) |*item, i| {
+        item.* = @intCast(i);
+    }
+    try expect(some_integers[10] == 10);
+    try expect(some_integers[99] == 99);
+}
+
+// объединение массивов работает, если значения известны
+// во время компиляции
+const part_one = [_]i32{ 1, 2, 3, 4 };
+const part_two = [_]i32{ 5, 6, 7, 8 };
+const all_of_it = part_one ++ part_two;
+comptime {
+    assert(mem.eql(i32, &all_of_it, &[_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 }));
+}
+
+// помните, что строковые литералы - это массивы
+const hello = "hello";
+const world = "world";
+const hello_world = hello ++ " " ++ world;
+comptime {
+    assert(mem.eql(u8, hello_world, "hello world"));
+}
+
+// ** выполняет повторяющиеся действия
+const pattern = "ab" ** 3;
+comptime {
+    assert(mem.eql(u8, pattern, "ababab"));
+}
+
+// инициализируем массив равным нулю
+const all_zero = [_]u16{0} ** 10;
+
+comptime {
+    assert(all_zero.len == 10);
+    assert(all_zero[5] == 0);
+}
+
+// используйте код во время компиляции для инициализации массива
+var fancy_array = init: {
+    var initial_value: [10]Point = undefined;
+    for (&initial_value, 0..) |*pt, i| {
+        pt.* = Point{
+            .x = @intCast(i),
+            .y = @intCast(i * 2),
+        };
+    }
+    break :init initial_value;
+};
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+test "compile-time array initialization" {
+    try expect(fancy_array[4].x == 4);
+    try expect(fancy_array[4].y == 8);
+}
+
+// вызов функции для инициализации массива
+var more_points = [_]Point{makePoint(3)} ** 10;
+fn makePoint(x: i32) Point {
+    return Point{
+        .x = x,
+        .y = x * 2,
+    };
+}
+test "array initialization with function calls" {
+    try expect(more_points[4].x == 3);
+    try expect(more_points[4].y == 6);
+    try expect(more_points.len == 10);
+}
+```
+```bash
+$ zig test test_arrays.zig
+1/4 test_arrays.test.iterate over an array...OK
+2/4 test_arrays.test.modify an array...OK
+3/4 test_arrays.test.compile-time array initialization...OK
+4/4 test_arrays.test.array initialization with function calls...OK
+All 4 tests passed.
+```
+
+#### Многомерные массивы
+
+Многомерные массивы могут быть созданы путем вложения массивов одного в другой:
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const mat4x4 = [4][4]f32{
+    [_]f32{ 1.0, 0.0, 0.0, 0.0 },
+    [_]f32{ 0.0, 1.0, 0.0, 1.0 },
+    [_]f32{ 0.0, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.0, 0.0, 0.0, 1.0 },
+};
+test "multidimensional arrays" {
+    // Получите доступ к двумерному массиву, проиндексировав внешний массив, а затем внутренний массив.
+    try expect(mat4x4[1][1] == 1.0);
+
+    // Здесь мы выполняем итерацию с помощью циклов for.
+    for (mat4x4, 0..) |row, row_index| {
+        for (row, 0..) |cell, column_index| {
+            if (row_index == column_index) {
+                try expect(cell == 1.0);
+            }
+        }
+    }
+}
+```
+```bash
+$ zig test test_multidimensional_arrays.zig
+1/1 test_multidimensional_arrays.test.multidimensional arrays...OK
+All 1 tests passed.
+```
+
+#### Нуль терменированные массивы
+
+Синтаксис `[N:x]T` описывает массив, который имеет контрольный элемент со значением `x` с индексом соответствующим
+длине `N`.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "0-terminated sentinel array" {
+    const array = [_:0]u8{ 1, 2, 3, 4 };
+
+    try expect(@TypeOf(array) == [4:0]u8);
+    try expect(array.len == 4);
+    try expect(array[4] == 0);
+}
+
+test "extra 0s in 0-terminated sentinel array" {
+    // Контрольное значение может появиться раньше, но оно не влияет на время компиляции 'len'.
+    const array = [_:0]u8{ 1, 0, 0, 4 };
+
+    try expect(@TypeOf(array) == [4:0]u8);
+    try expect(array.len == 4);
+    try expect(array[4] == 0);
+}
+```
+```bash
+$ zig test test_null_terminated_array.zig
+1/2 test_null_terminated_array.test.0-terminated sentinel array...OK
+2/2 test_null_terminated_array.test.extra 0s in 0-terminated sentinel array...OK
+All 2 tests passed.
+```
