@@ -1094,7 +1094,41 @@ pub fn main() void {
 |Wrapping<br>Addition|`a +% b`<br>`a +%= b`|Integers|Twos-complement wrapping behavior.<br>Invokes Peer Type Resolution for the operands.<br>See also `@addWithOverflow.`|`@as(u32, 0xffffffff) +% 1 == 0`
 |Saturating<br>Addition|`a +\| b`<br>`a +\|= b`|Integers|Invokes Peer Type Resolution for the operands.|`@as(u8, 255) +\| 1 == @as(u8, 255)`
 |Subtraction|`a - b`<br>`a -= b`|Integers<br>Floats|Can cause overflow for integers.<br>Invokes Peer Type Resolution for the operands.<br>See also `@subWithOverflow.`|`2 - 5 == -3`
-
+|Wrapping<br>Subtraction|`a -% b`<br>`a -%= b`|Integers|Twos-complement wrapping behavior.<br>Invokes Peer Type Resolution for the operands.<br>See also `@subWithOverflow.`|`@as(u8, 0) -% 1 == 255`
+|Saturating<br>Subtraction|`a -\| b`<br>`a -\|= b`|Integers|Invokes Peer Type Resolution for the operands.|`@as(u32, 0) -\| 1 == 0`
+|Negation|`-a`|Integers<br>Floats|Can cause overflow for integers.|`-1 == 0 - 1`
+|Wrapping<br>Negation|`-%a`|Integers|Twos-complement wrapping behavior.|`-%@as(i8, -128) == -128`
+|Multiplication|`a * b`<br>`a *= b`|Integers<br>Floats|Can cause overflow for integers.<br>Invokes Peer Type Resolution for the operands.<br>See also `@mulWithOverflow.`|`2 * 5 == 10`
+|Wrapping<br>Multiplication|`a *% b`<br>`a *%= b`|Integers|Twos-complement wrapping behavior.<br>Invokes Peer Type Resolution for the operands.<br>See also `@mulWithOverflow.`|`@as(u8, 200) *% 2 == 144`
+|Saturating<br>Multiplication|`a *\| b`<br>`a *\|= b`|Integers|Invokes Peer Type Resolution for the operands.|`@as(u8, 200) *\| 2 == 255`
+|Division|`a / b`<br>`a /= b`|Integers<br>Floats|Can cause overflow for integers.<br>Can cause Division by Zero for integers.<br>Can cause Division by Zero for floats in FloatMode.Optimized Mode.<br>Signed integer operands must be comptime-known and positive. In other cases, use `@divTrunc`, `@divFloor`, or `@divExact` instead.<br>Invokes Peer Type Resolution for the operands.|`10 / 2 == 5`
+|Remainder<br>Division|`a % b`<br>`a %= b`|Integers<br>Floats|Can cause Division by Zero for integers.<br>Can cause Division by Zero for floats in FloatMode.Optimized Mode.<br>Signed or floating-point operands must be comptime-known and positive. In other cases, use @rem or `@mod` instead.<br>Invokes Peer Type Resolution for the operands.|`10 % 3 == 1`
+|Bit Shift Left|`a << b`<br>`a <<= b`|Integers|Moves all bits to the left, inserting new zeroes at the least-significant bit.<br>`b` must be comptime-known or have a type with log2 number of bits as `a`.<br>See also `@shlExact.`<br>See also `@shlWithOverflow.`|`0b1 << 8 == 0b100000000`
+|Saturating Bit Shift Left|`a <<\| b`<br>`a <<\|= b`|Integers|See also `@shlExact`.<br>See also `@shlWithOverflow.`|`@as(u8,1) <<\| 8 == 255`
+|Bit Shift Right|`a >> b`<br>`a >>= b`|Integers|Moves all bits to the right, inserting zeroes at the most-significant bit.<br>`b` must be comptime-known or have a type with log2 number of bits as `a`.<br>See also `@shrExact`.|`0b1010 >> 1 == 0b101`
+|Bitwise And|`a & b`<br>`a &= b`|Integers|Invokes Peer Type Resolution for the operands.|`0b011 & 0b101 == 0b001`
+|Bitwise Or|`a \| b`<br>`a \|= b`|Integers|Invokes Peer Type Resolution for the operands.|`0b010 \| 0b100 == 0b110`
+|Bitwise Xor|`a ^ b`<br>`a ^= b`|Integers|Invokes Peer Type Resolution for the operands.|`0b011 ^ 0b101 == 0b110`
+|Bitwise Not|`~a`|Integers||`~@as(u8, 0b10101111) == 0b01010000`
+|Defaulting<br>Optional<br>Unwrap|`a orelse b`|Optionals|If `a` is `null`, returns `b` ("default value"), otherwise returns the unwrapped value of `a`. Note that `b` may be a value of type `noreturn.`|`const value: ?u32 = null;`<br>`const unwrapped = value orelse 1234;`<br>`unwrapped == 1234`
+|Optional<br>Unwrap|`a.?`|Optionals|Equivalent to: `a orelse unreachable`|`const value: ?u32 = 5678;`<br>`value.? == 5678`
+|Defaulting<br>Error Unwrap|`a catch b`<br>`a catch \|err\| b`|Error<br>Unions|If `a` is an `error`, returns `b` ("default value"), otherwise returns the unwrapped value of `a`. Note that `b` may be a value of type `noreturn`. `err` is the `error` and is in scope of the expression `b`.|`const value: anyerror!u32 = error.Broken;`<br>`const unwrapped = value catch 1234;`<br>`unwrapped == 1234`
+|Logical And|`a and b`|bool|If `a` is `false`, returns `false` without evaluating `b`. Otherwise, returns `b`.|`(false and true) == false`
+|Logical Or|`a or b`|bool|If `a` is `true`, returns `true` without evaluating `b`. Otherwise, returns `b`.|`(false or true) == true`
+|Boolean Not|`!a`|bool||`!false == true`
+|Equality|`a == b`|Integers<br>Floats<br>bool<br>type|Returns `true` if `a` and `b` are equal, otherwise returns `false`.<br>Invokes Peer Type Resolution for the operands.|`(1 == 1) == true`
+|Null Check|`a == null`|Optionals|Returns `true` if `a` is `null`, otherwise returns `false.`|`const value: ?u32 =null;`<br>`(value == null) == true`
+|Inequality|`a != b`|Integers<br>Floats<br>bool<br>type|Returns `false` if `a` and `b` are unequal, otherwise returns `true`.<br>Invokes Peer Type Resolution for the operands.|`(1 != 1) == false`
+|Non-Null Check|`a != null`|Optionals|Returns `false` if `a` is `null`, otherwise returns `true.`|`const value: ?u32 = 5;`<br>`(value != null) == true`
+|Greater Than|`a > b`|Integers<br>Floats|Returns `true` if `a` is greater than `b`, otherwise returns `false`.<br>Invokes Peer Type Resolution for the operands.|`(2 > 1) == true`
+|Greater or Equal|`a >= b`|Integers<br>Floats|Returns `true` if `a` is greater than `b` or equal, otherwise returns `false`.<br>Invokes Peer Type Resolution for the operands.|`(2 >= 1) == true`
+|Less Than|`a < b`|Integers<br>Floats|Returns `true` if `a` is less than `b`, otherwise returns `false`.<br>Invokes Peer Type Resolution for the operands.|`(1 < 2) == true`
+|Lesser or Equal|`a <= b`|Integers<br>Floats|Returns `true` if `a` is less than `b` or equal, otherwise returns `false`.<br>Invokes Peer Type Resolution for the operands.|`(1 <= 2) == true`
+|Array Concatenation|`a ++ b`|Arrays|Only available when the lengths of both `a` and `b` are compile-time known.|`const mem = @import("std").mem;`<br>`const array1 = [_]u32{1,2};`<br>`const array2 = [_]u32{3,4};`<br>`const together = array1 ++ array2;`<br>`mem.eql(u32, &together, &[_]u32{1,2,3,4})`
+|Array Multiplication|`a ** b`|Arrays|Only available when the length of `a` and `b` are compile-time known.|`const mem = @import("std").mem;`<br>`const pattern = "ab" ** 3;`<br>`mem.eql(u8, pattern, "ababab")`
+|Pointer Dereference|`a.*`|Pointers|Pointer dereference.|`const x: u32 = 1234;`<br>`const ptr = &x;`<br>`ptr.* == 1234`
+|Address Of|`&a`|All types||`const x: u32 = 1234;`<br>`const ptr = &x;`<br>`ptr.* = 1234`
+|Error Set Merge|`a \|\| b`|Error Set Type| Merging Error Set|`const A = error{One};`<br>`const B = error{Two};`<br>`(A \|\| B) == error{One,Two}`
 
 #### Приоритеты операций
 ```zig
