@@ -261,8 +261,8 @@ value: 1234
 ```
 
 **<center>Primitive Types</center>**
-|Type|C Equivalent|Description
-|---|---|---|
+|Type|C Equivalent|Description|
+|----|------------|-----------|
 | <font color="blue">`i8`</font>| `int8_t` | signed 8-bit integer
 | <font color="blue">`u8`</font>| `uint8_t` | unsigned 8-bit integer
 | <font color="blue">`i16`</font>| `int16_t` | signed 16-bit integer |
@@ -371,7 +371,7 @@ true
 
 **<center>Escape Sequences</center>**
 |Escape Sequence|Name|
-|---|---|
+|---------------|----|
 |`\n` |Newline
 |`\r` | Carriage Return
 |`\t` | Tab
@@ -504,7 +504,6 @@ $ ./assign_undefined
 const std = @import("std");
 
 test "expect addOne adds one to 41" {
-
     // Стандартная библиотека содержит полезные функции, помогающие создавать тесты.
     // `expect` - это функция, которая проверяет, что ее аргумент равен true.
     // Она вернет ошибку, если ее аргумент равен false, что указывает на сбой.
@@ -804,7 +803,7 @@ const color: Color = .@"really red";
 
 Переменные уровня контейнера имеют статическое время жизни, не зависят от порядка и лениво анализируются.
 Значением инициализации переменных уровня контейнера неявно является `comptime`. Если переменная уровня контейнера
-равна `const`, то ее значение известно во вренмени компиляции, в противном случае оно известно во время выполнения.
+равна `const`, то ее значение известно во времени компиляции, в противном случае оно известно во время выполнения.
 
 ```zig
 var y: i32 = add(10, x);
@@ -1081,3 +1080,34 @@ pub fn main() void {
 ```
 
 ------------
+
+### Операторы
+
+Перегрузки операторов нет. Когда вы видите оператор в **Zig**, вы знаете, что он выполняет что-то из этой таблицы и
+ничего больше.
+
+**<center>Table of Operators</center>**
+
+|Name|Syntax|Types|Remarks|Example|
+|----|:------:|-----|-------|-------|
+|Addition|`a + b`<br>`a += b`|Integers <br>Floats|Can cause overflow for integers. <br>Invokes Peer Type Resolution for the operands.<br>See also `@addWithOverflow.`| `1 + 5 == 7`
+|Wrapping<br>Addition|`a +% b`<br>`a +%= b`|Integers|Twos-complement wrapping behavior.<br>Invokes Peer Type Resolution for the operands.<br>See also `@addWithOverflow.`|`@as(u32, 0xffffffff) +% 1 == 0`
+|Saturating<br>Addition|`a +\| b`<br>`a +\|= b`|Integers|Invokes Peer Type Resolution for the operands.|`@as(u8, 255) +\| 1 == @as(u8, 255)`
+|Subtraction|`a - b`<br>`a -= b`|Integers<br>Floats|Can cause overflow for integers.<br>Invokes Peer Type Resolution for the operands.<br>See also `@subWithOverflow.`|`2 - 5 == -3`
+
+
+#### Приоритеты операций
+```zig
+x() x[] x.y x.* x.?
+a!b
+x{}
+!x -x -%x ~x &x ?x
+* / % ** *% *| ||
++ - ++ +% -% +| -|
+<< >> <<|
+& ^ | orelse catch
+== != < > <= >=
+and
+or
+= *= *%= *|= /= %= += +%= +|= -= -%= -|= <<= <<|= >>= &= ^= |=
+```
