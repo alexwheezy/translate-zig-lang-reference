@@ -1403,3 +1403,441 @@ TODO talk about C ABI interop<br>
 TODO consider suggesting std.MultiArrayList
 
 ------------
+
+### Указатели
+
+В **Zig** есть два вида указателей: одноэлементные и многоэлементные:
+
+- `*T` - одноэлементный указатель ровно на один элемент.
+    - Поддерживает синтаксис разыменования: `ptr.*`
+- `[*]T` - многоэлементный указатель на неизвестное количество элементов.
+    - Поддерживает синтаксис индексациия: `ptr[i]`
+    - Поддерживает синтаксис срезов: `ptr[start..end]` and `ptr[start..]`
+    - Поддерживает арифметику указателей: `ptr + x`, `ptr - x`
+    - `T` должен иметь известный размер, что означает, что он не может быть константным или каким-либо другим
+    непрозрачным типом.
+
+Эти типы тесно связаны с массивами и слайсами:
+- `*[N]T` - указатель на N элементов, такой же как одноэлементный указатель на массив.
+    - Поддерживает синтаксис индекса: `array_ptr[i]`
+    - Поддерживает синтаксис срезов: `array_ptr[start..end]`
+    - Поддерживает свойство длины: `array_ptr.len`
+
+- `[]T` - это слайс (толстый указатель который содержит указатель типа `[*]T` и длину).
+    - Поддерживает синтаксис индекса: `slice[i]`
+    - Поддерживает синтаксис срезов: `slice[start..end]`
+    - Поддерживает свойство длины: `slice.len`
+
+Используйте `&x` для получения указателя на один элемент:
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "address of syntax" {
+    // Получить адрес переменной:
+    const x: i32 = 1234;
+    const x_ptr = &x;
+
+    // Разыменование указателя:
+    try expect(x_ptr.* == 1234);
+
+    // Когда вы получаете адрес переменной const, вы получаете указатель на один элемент const.
+    try expect(@TypeOf(x_ptr) == *const i32);
+
+    // Если вы хотите изменить значение, вам понадобится адрес изменяемой переменной:
+    var y: i32 = 5678;
+    const y_ptr = &y;
+    try expect(@TypeOf(y_ptr) == *i32);
+    y_ptr.* += 1;
+    try expect(y_ptr.* == 5679);
+}
+
+test "pointer array access" {
+    // Если взять адрес отдельного элемента, то получится
+    // указатель на один элемент. Этот тип указателя
+    // не поддерживает арифметику указателей.
+    var array = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    const ptr = &array[2];
+    try expect(@TypeOf(ptr) == *u8);
+
+    try expect(array[2] == 3);
+    ptr.* += 1;
+    try expect(array[2] == 4);
+}
+```
+```bash
+$ zig test test_single_item_pointer.zig
+1/2 test_single_item_pointer.test.address of syntax...OK
+2/2 test_single_item_pointer.test.pointer array access...OK
+All 2 tests passed.
+```
+
+**Zig** поддерживает арифметику с указателями. Лучше присвоить указателю значение `[*]T` и увеличить эту переменную.
+Например, прямое увеличение указателя из среза приведет к его повреждению.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "pointer arithmetic with many-item pointer" {
+    const array = [_]i32{ 1, 2, 3, 4 };
+    var ptr: [*]const i32 = &array;
+
+    try expect(ptr[0] == 1);
+    ptr += 1;
+    try expect(ptr[0] == 2);
+
+    // разбиение указателя на множество элементов без указания конца эквивалентно
+    // арифметике указателя: `ptr[start..] == ptr + start`
+    try expect(ptr[1..] == ptr + 1);
+}
+
+test "pointer arithmetic with slices" {
+    var array = [_]i32{ 1, 2, 3, 4 };
+    var length: usize = 0; // var, чтобы он был известен во время выполнения
+    _ = &length; // подавить ошибку "var не был изменён"
+    var slice = array[length..array.len];
+
+    try expect(slice[0] == 1);
+    try expect(slice.len == 4);
+
+    slice.ptr += 1;
+    // теперь срез находится в неконсистентном состоянии, так как len не обновлялся
+
+    try expect(slice[0] == 2);
+    try expect(slice.len == 4);
+}
+```
+```bash
+$ zig test test_pointer_arithmetic.zig
+1/2 test_pointer_arithmetic.test.pointer arithmetic with many-item pointer...OK
+2/2 test_pointer_arithmetic.test.pointer arithmetic with slices...OK
+All 2 tests passed.
+```
+
+ В **Zig** мы как правило предпочитаем срезы, а не указатели заканчивающиеся кардиналом. Вы можете преобразовать
+ массив или указатель в срез используя синтаксис срезов.
+
+Срезы имеют проверку границ и следовательно защищены от такого рода неопределенного поведения. Это одна из причин по
+которой мы предпочитаем срезы указателям.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "pointer slicing" {
+    var array = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    var start: usize = 2; // var, чтобы он был известен во время выполнения
+    _ = &start; // подавить ошибку "var не был изменён"
+    const slice = array[start..4];
+    try expect(slice.len == 2);
+
+    try expect(array[3] == 4);
+    slice[1] += 1;
+    try expect(array[3] == 5);
+}
+```
+```bash
+$ zig test test_slice_bounds.zig
+1/1 test_slice_bounds.test.pointer slicing...OK
+All 1 tests passed.
+```
+
+Указатели также работают во время компиляции если только код не зависит от неопределенного расположения памяти:
+```zig
+const expect = @import("std").testing.expect;
+
+test "comptime pointers" {
+    comptime {
+        var x: i32 = 1;
+        const ptr = &x;
+        ptr.* += 1;
+        x += 1;
+        try expect(ptr.* == 3);
+    }
+}
+```
+```bash
+$ zig test test_comptime_pointers.zig
+1/1 test_comptime_pointers.test.comptime pointers...OK
+All 1 tests passed.
+```
+
+Чтобы преобразовать целочисленный адрес в указатель используйте `@ptrFromInt`. Чтобы преобразовать указатель в целое
+число используйте `@intFromPtr`:
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "@intFromPtr and @ptrFromInt" {
+    const ptr: *i32 = @ptrFromInt(0xdeadbee0);
+    const addr = @intFromPtr(ptr);
+    try expect(@TypeOf(addr) == usize);
+    try expect(addr == 0xdeadbee0);
+}
+```
+```bash
+$ zig test test_integer_pointer_conversion.zig
+1/1 test_integer_pointer_conversion.test.@intFromPtr and @ptrFromInt...OK
+All 1 tests passed.
+```
+
+**Zig** способен сохранять адреса памяти в comptime коде до тех пор пока указатель никогда не будет разыменован:
+```zig
+const expect = @import("std").testing.expect;
+
+test "comptime @ptrFromInt" {
+    comptime {
+        // Zig может делать это во время компиляции, при условии, что
+        // ptr никогда не разыменовывается.
+        const ptr: *i32 = @ptrFromInt(0xdeadbee0);
+        const addr = @intFromPtr(ptr);
+        try expect(@TypeOf(addr) == usize);
+        try expect(addr == 0xdeadbee0);
+    }
+}
+```
+```bash
+$ zig test test_comptime_pointer_conversion.zig
+1/1 test_comptime_pointer_conversion.test.comptime @ptrFromInt...OK
+All 1 tests passed.
+```
+
+#### volatile
+
+Предполагается, что загрузка и сохранение данных не имеют побочных эффектов. Если данная загрузка или сохранение данных
+должны иметь побочные эффекты такие как ввод/вывод с отображением памяти (MMIO) используйте `volatile`. В следующем коде
+гарантированно все загрузки и сохранения с помощью `mmio_ptr` выполняются в том же порядке, что и в исходном коде:
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "volatile" {
+    const mmio_ptr: *volatile u8 = @ptrFromInt(0x12345678);
+    try expect(@TypeOf(mmio_ptr) == *volatile u8);
+}
+```
+```bash
+$ zig test test_volatile.zig
+1/1 test_volatile.test.volatile...OK
+All 1 tests passed.
+```
+
+Обратите внимание, что `volatile` не связан с параллелизмом и атомарностью. Если вы видите код который использует
+`volatile` для чего-то другого кроме ввода/вывода с отображением в памяти, то это вероятно ошибка.
+
+`@ptrCast` преобразует тип элемента указателя в другой. Это создает новый указатель, который может вызвать неопределяемое
+незаконное поведение в зависимости от загружаемых данных и хранилищ, которые проходят через него. Как правило, другие
+виды преобразования типов предпочтительнее чем `@ptrCast`, если это возможно.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "pointer casting" {
+    const bytes align(@alignOf(u32)) = [_]u8{ 0x12, 0x12, 0x12, 0x12 };
+    const u32_ptr: *const u32 = @ptrCast(&bytes);
+    try expect(u32_ptr.* == 0x12121212);
+
+    // Даже этот пример является надуманным - есть способы сделать это лучше, чем
+    // приведение указателя. Например, используя приведение с сужением слайса:
+    const u32_value = std.mem.bytesAsSlice(u32, bytes[0..])[0];
+    try expect(u32_value == 0x12121212);
+
+    // И даже другой способ, самый простой способ сделать это:
+    try expect(@as(u32, @bitCast(bytes)) == 0x12121212);
+}
+
+test "pointer child type" {
+    // типы указателей имеют `дочернее` поле, в котором указывается тип, на который они указывают.
+    try expect(@typeInfo(*u32).Pointer.child == u32);
+}
+```
+```bash
+$ zig test test_pointer_casting.zig
+1/2 test_pointer_casting.test.pointer casting...OK
+2/2 test_pointer_casting.test.pointer child type...OK
+All 2 tests passed.
+```
+
+#### Выравнивание
+
+У каждого типа есть **alignment** - количество байт, так что, когда значение этого типа загружается из памяти или
+сохраняется в ней, адрес памяти должен быть равномерно кратен этому числу. Вы можете использовать `@alignOf`, чтобы
+узнать это значение для любого типа.
+
+Выравнивание зависит от архитектуры процессора, но всегда имеет степень двойки и меньше `1 << 29`.
+
+В **Zig** тип указателя имеет значение выравнивание. Если значение равно выравниванию базового типа, его можно не
+указывать в типе:
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const expect = std.testing.expect;
+
+test "variable alignment" {
+    var x: i32 = 1234;
+    const align_of_i32 = @alignOf(@TypeOf(x));
+    try expect(@TypeOf(&x) == *i32);
+    try expect(*i32 == *align(align_of_i32) i32);
+    if (builtin.target.cpu.arch == .x86_64) {
+        try expect(@typeInfo(*i32).Pointer.alignment == 4);
+    }
+}
+```
+```bash
+$ zig test test_variable_alignment.zig
+1/1 test_variable_alignment.test.variable alignment...OK
+All 1 tests passed.
+```
+
+Точно так же как a `*i32` может быть преобразован в `*const i32`, указатель с большим выравниванием может быть неявно
+преобразован в указатель с меньшим выравниванием, но не наоборот.
+
+Вы можете указать выравнивание для переменных и функций. Если вы сделаете это, то указатели на них получат указанное
+выравнивание:
+
+```zig
+const expect = @import("std").testing.expect;
+
+var foo: u8 align(4) = 100;
+
+test "global variable alignment" {
+    try expect(@typeInfo(@TypeOf(&foo)).Pointer.alignment == 4);
+    try expect(@TypeOf(&foo) == *align(4) u8);
+    const as_pointer_to_array: *align(4) [1]u8 = &foo;
+    const as_slice: []align(4) u8 = as_pointer_to_array;
+    const as_unaligned_slice: []u8 = as_slice;
+    try expect(as_unaligned_slice[0] == 100);
+}
+
+fn derp() align(@sizeOf(usize) * 2) i32 {
+    return 1234;
+}
+fn noop1() align(1) void {}
+fn noop4() align(4) void {}
+
+test "function alignment" {
+    try expect(derp() == 1234);
+    try expect(@TypeOf(derp) == fn () i32);
+    try expect(@TypeOf(&derp) == *align(@sizeOf(usize) * 2) const fn () i32);
+
+    noop1();
+    try expect(@TypeOf(noop1) == fn () void);
+    try expect(@TypeOf(&noop1) == *align(1) const fn () void);
+
+    noop4();
+    try expect(@TypeOf(noop4) == fn () void);
+    try expect(@TypeOf(&noop4) == *align(4) const fn () void);
+}
+```
+```bash
+$ zig test test_variable_func_alignment.zig
+1/2 test_variable_func_alignment.test.global variable alignment...OK
+2/2 test_variable_func_alignment.test.function alignment...OK
+All 2 tests passed.
+```
+
+Если у вас есть указатель или слайс который имеет небольшое выравнивание, но вы знаете, что на самом деле он имеет
+большее выравнивание используйте `@alignCast` чтобы изменить указатель на более выровненный. Во время выполнения это не
+требуется, но вставляется проверка безопасности:
+
+```zig
+const std = @import("std");
+
+test "pointer alignment safety" {
+    var array align(4) = [_]u32{ 0x11111111, 0x11111111 };
+    const bytes = std.mem.sliceAsBytes(array[0..]);
+    try std.testing.expect(foo(bytes) == 0x11111111);
+}
+fn foo(bytes: []u8) u32 {
+    const slice4 = bytes[1..5];
+    const int_slice = std.mem.bytesAsSlice(u32, @as([]align(4) u8, @alignCast(slice4)));
+    return int_slice[0];
+}
+```
+```bash
+$ zig test test_incorrect_pointer_alignment.zig
+1/1 test_incorrect_pointer_alignment.test.pointer alignment safety...thread 3568823 panic: incorrect alignment
+/home/andy/src/zig/doc/langref/test_incorrect_pointer_alignment.zig:10:68: 0x103d13a in foo (test)
+    const int_slice = std.mem.bytesAsSlice(u32, @as([]align(4) u8, @alignCast(slice4)));
+                                                                   ^
+/home/andy/src/zig/doc/langref/test_incorrect_pointer_alignment.zig:6:31: 0x103cfd7 in test.pointer alignment safety (test)
+    try std.testing.expect(foo(bytes) == 0x11111111);
+                              ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x1047f10 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x103e28b in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103d609 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103d171 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/c771705677c0d2df24e00269a9189f97/test
+
+```
+
+#### allowzero
+
+Этот атрибут pointer позволяет указателю иметь нулевой адрес. Это необходимо только для автономной целевой системы OS,
+где нулевой адрес может быть отображен. Если вы хотите представить нулевые указатели используйте необязательные
+указатели. Необязательные указатели с значением `allowzero` не имеют такого же размера как указатели на объекты. В этом
+примере кода, если бы указатель не имел атрибута `allowzero`, это означало бы недопустимое приведение указателя к
+нулевому значению.:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "allowzero" {
+    var zero: usize = 0; // значение параметра должно быть известно во время выполнения
+    _ = &zero; // подавить ошибку "var не был изменён"
+    const ptr: *allowzero i32 = @ptrFromInt(zero);
+    try expect(@intFromPtr(ptr) == 0);
+}
+```
+```bash
+$ zig test test_allowzero.zig
+1/1 test_allowzero.test.allowzero...OK
+All 1 tests passed.
+```
+
+#### Указатели с контрольным кардиналом
+
+Синтаксис `[*:x]T` описывает указатель длина которого определяется контрольным значением. Это обеспечивает защиту от
+переполнения буфера и повторным чтением.
+
+```zig
+const std = @import("std");
+
+// Это также доступно как `std.c.printf`.
+pub extern "c" fn printf(format: [*:0]const u8, ...) c_int;
+
+pub fn main() anyerror!void {
+    _ = printf("Hello, world!\n"); // OK
+
+    const msg = "Hello, world!\n";
+    const non_null_terminated_msg: [msg.len]u8 = msg.*;
+    _ = printf(&non_null_terminated_msg);
+}
+```
+```bash
+$ zig build-exe sentinel-terminated_pointer.zig -lc
+/home/andy/src/zig/doc/langref/sentinel-terminated_pointer.zig:11:16: error: expected type '[*:0]const u8', found '*const [14]u8'
+    _ = printf(&non_null_terminated_msg);
+               ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/andy/src/zig/doc/langref/sentinel-terminated_pointer.zig:11:16: note: destination pointer requires '0' sentinel
+/home/andy/src/zig/doc/langref/sentinel-terminated_pointer.zig:4:35: note: parameter type declared here
+pub extern "c" fn printf(format: [*:0]const u8, ...) c_int;
+                                 ~^~~~~~~~~~~~
+referenced by:
+    callMain: /home/andy/src/zig/lib/std/start.zig:524:32
+    callMainWithArgs: /home/andy/src/zig/lib/std/start.zig:482:12
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+
+```
