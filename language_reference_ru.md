@@ -1403,7 +1403,6 @@ TODO talk about C ABI interop<br>
 TODO consider suggesting std.MultiArrayList
 
 ------------
-
 ### Указатели
 
 В **Zig** есть два вида указателей: одноэлементные и многоэлементные:
@@ -1841,3 +1840,234 @@ referenced by:
     remaining reference traces hidden; use '-freference-trace' to see all reference traces
 
 ```
+
+------------
+### Срезы
+
+Срез - это указатель и длина. Разница между массивом и срезом заключается в том, что длина массива является частью типа
+и известна во время компиляции, тогда как длина среза известна во время выполнения. Для доступа к обоим параметрам
+используется поле `len`.
+
+```zig
+const expect = @import("std").testing.expect;
+const expectEqualSlices = @import("std").testing.expectEqualSlices;
+
+test "basic slices" {
+    var array = [_]i32{ 1, 2, 3, 4 };
+    var known_at_runtime_zero: usize = 0;
+    _ = &known_at_runtime_zero;
+    const slice = array[known_at_runtime_zero..array.len];
+
+    // альтернативная инициализация с использованием местоположения результата
+    const alt_slice: []const i32 = &.{ 1, 2, 3, 4 };
+
+    try expectEqualSlices(i32, slice, alt_slice);
+
+    try expect(@TypeOf(slice) == []i32);
+    try expect(&slice[0] == &array[0]);
+    try expect(slice.len == array.len);
+
+    // Если выполнить срез с известными начальными и конечными позициями, то результатом будет
+    // указатель на массив, а не на срез.
+    const array_ptr = array[0..array.len];
+    try expect(@TypeOf(array_ptr) == *[array.len]i32);
+
+    // Вы можете выполнить срез по длине выполнив срез дважды. Это позволяет компилятору
+    // выполнить некоторые оптимизации например, распознать длину известную во время компиляции, когда
+    // начальная позиция известна только во время выполнения.
+    var runtime_start: usize = 1;
+    _ = &runtime_start;
+    const length = 2;
+    const array_ptr_len = array[runtime_start..][0..length];
+    try expect(@TypeOf(array_ptr_len) == *[length]i32);
+
+    // Использование оператора address-of для среза дает указатель на один элемент.
+    try expect(@TypeOf(&slice[0]) == *i32);
+    // Использование поля `ptr` дает указатель на множество элементов.
+    try expect(@TypeOf(slice.ptr) == [*]i32);
+    try expect(@intFromPtr(slice.ptr) == @intFromPtr(&slice[0]));
+
+    // Срезы проверяют границы массива.
+    // Если вы попытаетесь получить доступ к чему-либо за пределами вы получите сбой проверки безопасности:
+    slice[10] += 1;
+
+    // Обратите внимание, что `slice.ptr` не вызывает проверку безопасности, в то время как `&slice[0]`
+    // утверждает, что срез имеет len > 0.
+}
+```
+```bash
+$ zig test test_basic_slices.zig
+1/1 test_basic_slices.test.basic slices...thread 3571722 panic: index out of bounds: index 10, len 4
+/home/andy/src/zig/doc/langref/test_basic_slices.zig:41:10: 0x103f955 in test.basic slices (test)
+    slice[10] += 1;
+         ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104c800 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x104210b in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103fe49 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103f9b1 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/3c391d75c939ce98356b98dd812503b1/test
+```
+
+Это одна из причин по которой мы предпочитаем срезы указателям.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const mem = std.mem;
+const fmt = std.fmt;
+
+test "using slices for strings" {
+    // Zig не имеет понятия о строках. Строковые литералы - это контантные указатели
+    // на массивы u8 заканчивающиеся нулем, и по соглашению параметры
+    // которые являются "строками", должны быть срезами u8 в кодировке UTF-8.
+    // Здесь мы преобразуем *const [5:0]u8 и *const [6:0]u8 в []const u8
+    const hello: []const u8 = "hello";
+    const world: []const u8 = "世界";
+
+    var all_together: [100]u8 = undefined;
+    // Вы можете использовать синтаксис срезов содержащий по крайней мере один известный во время выполнения индекс в массиве
+    // чтобы преобразовать массив в срез.
+    var start: usize = 0;
+    _ = &start;
+    const all_together_slice = all_together[start..];
+    // Пример объединения строк.
+    const hello_world = try fmt.bufPrint(all_together_slice, "{s} {s}", .{ hello, world });
+
+    // Как правило вы можете использовать UTF-8 и не беспокоиться о том, является ли что-либо строкой.
+    // Если вам не нужно иметь дело с отдельными символами, нет необходимости в декодировании.
+    try expect(mem.eql(u8, hello_world, "hello 世界"));
+}
+
+test "slice pointer" {
+    var array: [10]u8 = undefined;
+    const ptr = &array;
+    try expect(@TypeOf(ptr) == *[10]u8);
+
+    // Указатель на массив может быть разделен точно так же, как и массив:
+    var start: usize = 0;
+    var end: usize = 5;
+    _ = .{ &start, &end };
+    const slice = ptr[start..end];
+    // Среза является изменяемым потому что мы вырезали изменяемый указатель.
+    try expect(@TypeOf(slice) == []u8);
+    slice[2] = 3;
+    try expect(array[2] == 3);
+
+    // Опять же, срез с использованием известных в comptime индексов приведет к созданию другого указателя
+    // на массив:
+    const ptr2 = slice[2..3];
+    try expect(ptr2.len == 1);
+    try expect(ptr2[0] == 3);
+    try expect(@TypeOf(ptr2) == *[1]u8);
+}
+```
+```bash
+$ zig test test_slices.zig
+1/2 test_slices.test.using slices for strings...OK
+2/2 test_slices.test.slice pointer...OK
+All 2 tests passed.
+```
+
+#### Срезы с контрольным элементами.
+
+Синтаксис `[:x]T` - это срез, длина которого известна во время выполнения, а также гарантирует наличие контрольного
+значения для элемента индексированного по длине. Тип не гарантирует, что до этого не было контрольных элементов. Срезы
+завершенные кардиналом предоставляют элементу доступ к индексу `len`.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "0-terminated slice" {
+    const slice: [:0]const u8 = "hello";
+
+    try expect(slice.len == 5);
+    try expect(slice[5] == 0);
+}
+```
+```bash
+$ zig test test_null_terminated_slice.zig
+1/1 test_null_terminated_slice.test.0-terminated slice...OK
+All 1 tests passed.
+```
+
+Срезы заканчивающиеся контрольным элементом также могут быть созданы с использованием вариации синтаксиса среза
+`data[start..end :x]`, где данные представляют собой указатель на множество элементов, массив или срез, а `x` - значение
+контрольного элемента.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "0-terminated slicing" {
+    var array = [_]u8{ 3, 2, 1, 0, 3, 2, 1, 0 };
+    var runtime_length: usize = 3;
+    _ = &runtime_length;
+    const slice = array[0..runtime_length :0];
+
+    try expect(@TypeOf(slice) == [:0]u8);
+    try expect(slice.len == 3);
+}
+```
+```bash
+$ zig test test_null_terminated_slicing.zig
+1/1 test_null_terminated_slicing.test.0-terminated slicing...OK
+All 1 tests passed.
+```
+
+Для среза завершенного с помощью контрольного элемента, утверждается, что элемент в позиции кардинала в исходных данных
+на самом деле является значением элемента. Если это не так, возникает неопределенное поведение защищенное с помощью
+safety.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "sentinel mismatch" {
+    var array = [_]u8{ 3, 2, 1, 0 };
+
+    // Создание среза заканчивающегося контрольным элементом из массива длиной 2
+    // приведет к тому, что значение `1` займет позицию этого элемента.
+    // Это не соответствует указанному значению элемента равное `0`, что приведет
+    // к панике во время выполнения.
+    var runtime_length: usize = 2;
+    _ = &runtime_length;
+    const slice = array[0..runtime_length :0];
+
+    _ = slice;
+}
+```
+```bash
+$ zig test test_sentinel_mismatch.zig
+1/1 test_sentinel_mismatch.test.sentinel mismatch...thread 3579807 panic: sentinel mismatch: expected 0, found 1
+/home/andy/src/zig/doc/langref/test_sentinel_mismatch.zig:13:24: 0x103cf16 in test.sentinel mismatch (test)
+    const slice = array[0..runtime_length :0];
+                       ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x1048aa0 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x103eabb in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103d4f9 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103d061 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/2af8da0d34d396fbb50fa515cef10c72/test
+```
+
+------------
