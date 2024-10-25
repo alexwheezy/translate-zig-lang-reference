@@ -2071,3 +2071,656 @@ error: the following test command crashed:
 ```
 
 ------------
+### Структура
+
+```zig
+// Объявляем структуру.
+// Zig не дает никаких гарантий относительно порядка расположения полей и размера
+// структуры, но поля гарантированно будут выровнены по вертикали.
+const Point = struct {
+    x: f32,
+    y: f32,
+};
+
+// Возможно мы хотим передать это в OpenGL, поэтому мы хотим быть внимательными к тому, как расположены байты.
+const Point2 = packed struct {
+    x: f32,
+    y: f32,
+};
+
+// Объявляет экземпляр структуры.
+const p = Point{
+    .x = 0.12,
+    .y = 0.34,
+};
+
+// Возможно мы еще не готовы заполнить некоторые поля.
+var p2 = Point{
+    .x = 0.12,
+    .y = undefined,
+};
+
+// У структур могут быть методы
+// Методы Struct не являются специальными, они просто разделены пространством имен
+// функции, которые вы можете вызывать с помощью точечного синтаксиса.
+const Vec3 = struct {
+    x: f32,
+    y: f32,
+    z: f32,
+
+    pub fn init(x: f32, y: f32, z: f32) Vec3 {
+        return Vec3{
+            .x = x,
+            .y = y,
+            .z = z,
+        };
+    }
+
+    pub fn dot(self: Vec3, other: Vec3) f32 {
+        return self.x * other.x + self.y * other.y + self.z * other.z;
+    }
+};
+
+const expect = @import("std").testing.expect;
+test "dot product" {
+    const v1 = Vec3.init(1.0, 0.0, 0.0);
+    const v2 = Vec3.init(0.0, 1.0, 0.0);
+    try expect(v1.dot(v2) == 0.0);
+
+    // Помимо того, что методы struct доступны для вызова с использованием точечного синтаксиса, они не являются
+    // особенными. Вы можете ссылаться на них как на любое другое объявление внутри
+    // структура:
+    try expect(Vec3.dot(v1, v2) == 0.0);
+}
+
+// Структуры могут содержать объявления.
+// Структуры могут содержать 0 полей.
+const Empty = struct {
+    pub const PI = 3.14;
+};
+test "struct namespaced variable" {
+    try expect(Empty.PI == 3.14);
+    try expect(@sizeOf(Empty) == 0);
+
+    // вы все еще можете создать экземпляр пустой структуры
+    const does_nothing = Empty{};
+
+    _ = does_nothing;
+}
+
+// порядок расположения полей struct определяется компилятором для обеспечения оптимальной производительности.
+// однако вы все равно можете вычислить базовый указатель struct по указателю поля:
+fn setYBasedOnX(x: *f32, y: f32) void {
+    const point: *Point = @fieldParentPtr("x", x);
+    point.y = y;
+}
+test "field parent pointer" {
+    var point = Point{
+        .x = 0.1234,
+        .y = 0.5678,
+    };
+    setYBasedOnX(&point.x, 0.9);
+    try expect(point.y == 0.9);
+}
+
+// Вы можете вернуть структуру из функции. Вот как мы создаем обобщения в Zig:
+fn LinkedList(comptime T: type) type {
+    return struct {
+        pub const Node = struct {
+            prev: ?*Node,
+            next: ?*Node,
+            data: T,
+        };
+
+        first: ?*Node,
+        last: ?*Node,
+        len: usize,
+    };
+}
+
+test "linked list" {
+    // Функции, вызываемые во время компиляции, сохраняются в памяти. Это означает, что вы можете
+    // сделать это:
+    try expect(LinkedList(i32) == LinkedList(i32));
+
+    const list = LinkedList(i32){
+        .first = null,
+        .last = null,
+        .len = 0,
+    };
+    try expect(list.len == 0);
+
+    // Поскольку типы являются значениями первого класса, вы можете создать экземпляр типа присвоив его переменной:
+    const ListOfInts = LinkedList(i32);
+    try expect(ListOfInts == LinkedList(i32));
+
+    var node = ListOfInts.Node{
+        .prev = null,
+        .next = null,
+        .data = 1234,
+    };
+    const list2 = LinkedList(i32){
+        .first = &node,
+        .last = &node,
+        .len = 1,
+    };
+
+    // При использовании указателя на структуру к полям можно обращаться напрямую без явного разыменования указателя.
+    // Таким образом, вы можете сделать
+    try expect(list2.first.?.data == 1234);
+    // instead of try expect(list2.first.?.*.data == 1234);
+}
+```
+```bash
+$ zig test test_structs.zig
+1/4 test_structs.test.dot product...OK
+2/4 test_structs.test.struct namespaced variable...OK
+3/4 test_structs.test.field parent pointer...OK
+4/4 test_structs.test.linked list...OK
+All 4 tests passed.
+```
+
+#### Значения полей по-умолчанию
+
+Каждое структурное поле может содержать выражение указывающее значение поля по-умолчанию. Такие выражения выполняются
+во время `comptime` и позволяют опустить поле в структурном литеральном выражении:
+
+```zig
+const Foo = struct {
+    a: i32 = 1234,
+    b: i32,
+};
+
+test "default struct initialization fields" {
+    const x: Foo = .{
+        .b = 5,
+    };
+    if (x.a + x.b != 1239) {
+        comptime unreachable;
+    }
+}
+```
+```bash
+$ zig test struct_default_field_values.zig
+1/1 struct_default_field_values.test.default struct initialization fields...OK
+All 1 tests passed.
+```
+
+Значения полей по-умолчанию подходят только в том случае если инварианты данных структуры не могут быть нарушены путем
+исключения этого поля из инициализации.
+
+Например, здесь приведено неправильное использование инициализации поля структуры по-умолчанию:
+
+```zig
+const Threshold = struct {
+    minimum: f32 = 0.25,
+    maximum: f32 = 0.75,
+
+    const Category = enum { low, medium, high };
+
+    fn categorize(t: Threshold, value: f32) Category {
+        assert(t.maximum >= t.minimum);
+        if (value < t.minimum) return .low;
+        if (value > t.maximum) return .high;
+        return .medium;
+    }
+};
+
+pub fn main() !void {
+    var threshold: Threshold = .{
+        .maximum = 0.20,
+    };
+    const category = threshold.categorize(0.90);
+    try std.io.getStdOut().writeAll(@tagName(category));
+}
+
+const std = @import("std");
+const assert = std.debug.assert;
+```
+```bash
+$ zig build-exe bad_default_value.zig
+$ ./bad_default_value
+thread 3570319 panic: reached unreachable code
+/home/andy/src/zig/lib/std/debug.zig:412:14: 0x1037a6d in assert (bad_default_value)
+    if (!ok) unreachable; // assertion failure
+             ^
+/home/andy/src/zig/doc/langref/bad_default_value.zig:8:15: 0x1034f59 in categorize (bad_default_value)
+        assert(t.maximum >= t.minimum);
+              ^
+/home/andy/src/zig/doc/langref/bad_default_value.zig:19:42: 0x1034e8a in main (bad_default_value)
+    const category = threshold.categorize(0.90);
+                                         ^
+/home/andy/src/zig/lib/std/start.zig:524:37: 0x1034da5 in posixCallMainAndExit (bad_default_value)
+            const result = root.main() catch |err| {
+                                    ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10348c1 in _start (bad_default_value)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+
+```
+
+Выше вы можете увидеть опасность игнорирования этого принципа. Значения полей по-умолчанию привели к нарушению
+инварианта данных, что привело к незаконному поведению.
+
+Чтобы исправить это, удалите значения по-умолчанию из всех структурных полей и укажите именованное значение
+по-умолчанию:
+
+```zig
+const Threshold = struct {
+    minimum: f32,
+    maximum: f32,
+
+    const default: Threshold = .{
+        .minimum = 0.25,
+        .maximum = 0.75,
+    };
+};
+```
+
+Если для инициализации значения `struct` требуется значение известное во время выполнения, без нарушения инвариантов
+данных, то используйте метод инициализации который принимает эти значения во время выполнения и заполняет остальные
+поля.
+
+#### Внешняя структура
+
+Структура `extern` имеет расположение в памяти соответствующее C ABI для целевого объекта.
+
+Если не требуется четко определенное расположение в памяти, `struct` - лучший выбор, поскольку он накладывает меньше
+ограничений на компилятор.
+
+Смотрите раздел упакованная структура для структуры которая имеет ABI своего базового целого числа, что может быть
+полезно для моделирования флагов.
+
+#### Упакованная структура
+
+В отличие от обычных структур, упакованные структуры имеют гарантированное расположение в памяти:
+
+- Поля остаются в указанном порядке, от наименее значимого к наиболее значимому.
+- Между полями нет паддинга.
+- **Zig** поддерживает целые числа произвольной ширины, и хотя обычно целые числа содержащие менее 8 бит, по-прежнему
+занимают 1 байт памяти, в упакованных структурах они используют именно свою разрядност логические поля используют ровно
+1 бит.
+- Поле `enum` использует ровно столько же битовой ширины, сколько и его целочисленный тип тега.
+- Поле упакованного объединения использует ровно столько же битовой ширины, сколько поле объединения с наибольшей
+битовой шириной.
+
+Это означает, что упакованная структура может участвовать в `@bitCast` или `@ptrCast` для переинтерпретации памяти. Это
+работает даже в `comptime`:
+
+```zig
+const std = @import("std");
+const native_endian = @import("builtin").target.cpu.arch.endian();
+const expect = std.testing.expect;
+
+const Full = packed struct {
+    number: u16,
+};
+const Divided = packed struct {
+    half1: u8,
+    quarter3: u4,
+    quarter4: u4,
+};
+
+test "@bitCast between packed structs" {
+    try doTheTest();
+    try comptime doTheTest();
+}
+
+fn doTheTest() !void {
+    try expect(@sizeOf(Full) == 2);
+    try expect(@sizeOf(Divided) == 2);
+    const full = Full{ .number = 0x1234 };
+    const divided: Divided = @bitCast(full);
+    try expect(divided.half1 == 0x34);
+    try expect(divided.quarter3 == 0x2);
+    try expect(divided.quarter4 == 0x1);
+
+    const ordered: [2]u8 = @bitCast(full);
+    switch (native_endian) {
+        .big => {
+            try expect(ordered[0] == 0x12);
+            try expect(ordered[1] == 0x34);
+        },
+        .little => {
+            try expect(ordered[0] == 0x34);
+            try expect(ordered[1] == 0x12);
+        },
+    }
+}
+```
+```bash
+$ zig test test_packed_structs.zig
+1/1 test_packed_structs.test.@bitCast between packed structs...OK
+All 1 tests passed.
+```
+
+Исходное целое число вычисляется из общей разрядности полей. При желании оно может быть явно указано и применено во
+время компиляции:
+
+```zig
+test "missized packed struct" {
+    const S = packed struct(u32) { a: u16, b: u8 };
+    _ = S{ .a = 4, .b = 2 };
+}
+```
+```bash
+$ zig test test_missized_packed_struct.zig
+doc/langref/test_missized_packed_struct.zig:2:29: error: backing integer type 'u32' has bit size 32 but the struct fields have a total bit size of 24
+    const S = packed struct(u32) { a: u16, b: u8 };
+                            ^~~
+
+```
+
+**Zig** позволяет использовать адрес поля не выровненного по байтам:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const BitField = packed struct {
+    a: u3,
+    b: u3,
+    c: u2,
+};
+
+var foo = BitField{
+    .a = 1,
+    .b = 2,
+    .c = 3,
+};
+
+test "pointer to non-byte-aligned field" {
+    const ptr = &foo.b;
+    try expect(ptr.* == 2);
+```
+```bash
+$ zig test test_pointer_to_non-byte_aligned_field.zig
+1/1 test_pointer_to_non-byte_aligned_field.test.pointer to non-byte-aligned field...OK
+All 1 tests passed.
+```
+
+Однако указатель на поле не выровненное по байтам, обладает особыми свойствами и не может быть передан, когда ожидается
+обычный указатель:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const BitField = packed struct {
+    a: u3,
+    b: u3,
+    c: u2,
+};
+
+var bit_field = BitField{
+    .a = 1,
+    .b = 2,
+    .c = 3,
+};
+
+test "pointer to non-byte-aligned field" {
+    try expect(bar(&bit_field.b) == 2);
+}
+
+fn bar(x: *const u3) u3 {
+    return x.*;
+}
+```
+```bash
+$ zig test test_misaligned_pointer.zig
+doc/langref/test_misaligned_pointer.zig:17:20: error: expected type '*const u3', found '*align(1:3:1) u3'
+    try expect(bar(&bit_field.b) == 2);
+                   ^~~~~~~~~~~~
+doc/langref/test_misaligned_pointer.zig:17:20: note: pointer host size '1' cannot cast into pointer host size '0'
+doc/langref/test_misaligned_pointer.zig:17:20: note: pointer bit offset '3' cannot cast into pointer bit offset '0'
+doc/langref/test_misaligned_pointer.zig:20:11: note: parameter type declared here
+fn bar(x: *const u3) u3 {
+          ^~~~~~~~~
+```
+
+В этом случае функциональная строка не может быть вызвана, поскольку указатель на поле не выровненное по ABI, указывает
+на смещение в битах, но функция ожидает указатель, выровненный по ABI.
+
+Указатели на поля не выровненные по ABI, имеют тот же адрес, что и другие поля в пределах их основного целого:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const BitField = packed struct {
+    a: u3,
+    b: u3,
+    c: u2,
+};
+
+var bit_field = BitField{
+    .a = 1,
+    .b = 2,
+    .c = 3,
+};
+
+test "pointers of sub-byte-aligned fields share addresses" {
+    try expect(@intFromPtr(&bit_field.a) == @intFromPtr(&bit_field.b));
+    try expect(@intFromPtr(&bit_field.a) == @intFromPtr(&bit_field.c));
+}
+```
+```bash
+$ zig test test_packed_struct_field_address.zig
+1/1 test_packed_struct_field_address.test.pointers of sub-byte-aligned fields share addresses...OK
+All 1 tests passed.
+```
+
+Это можно наблюдать с помощью `@bitOffsetOf` и `offsetOf`:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const BitField = packed struct {
+    a: u3,
+    b: u3,
+    c: u2,
+};
+
+test "offsets of non-byte-aligned fields" {
+    comptime {
+        try expect(@bitOffsetOf(BitField, "a") == 0);
+        try expect(@bitOffsetOf(BitField, "b") == 3);
+        try expect(@bitOffsetOf(BitField, "c") == 6);
+
+        try expect(@offsetOf(BitField, "a") == 0);
+        try expect(@offsetOf(BitField, "b") == 0);
+        try expect(@offsetOf(BitField, "c") == 0);
+    }
+}
+```
+```bash
+$ zig test test_bitOffsetOf_offsetOf.zig
+1/1 test_bitOffsetOf_offsetOf.test.offsets of non-byte-aligned fields...OK
+All 1 tests passed.
+```
+
+Упакованные структуры имеют то же выравнивание, что и их исходное целое число, однако перенастроенные указатели на
+упакованные структуры могут переопределять это:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const S = packed struct {
+    a: u32,
+    b: u32,
+};
+test "overaligned pointer to packed struct" {
+    var foo: S align(4) = .{ .a = 1, .b = 2 };
+    const ptr: *align(4) S = &foo;
+    const ptr_to_b: *u32 = &ptr.b;
+    try expect(ptr_to_b.* == 2);
+}
+```
+```bash
+$ zig test test_overaligned_packed_struct.zig
+1/1 test_overaligned_packed_struct.test.overaligned pointer to packed struct...OK
+All 1 tests passed.
+```
+
+Также можно настроить выравнивание полей структуры:
+
+```zig
+const std = @import("std");
+const expectEqual = std.testing.expectEqual;
+
+test "aligned struct fields" {
+    const S = struct {
+        a: u32 align(2),
+        b: u32 align(64),
+    };
+    var foo = S{ .a = 1, .b = 2 };
+
+    try expectEqual(64, @alignOf(S));
+    try expectEqual(*align(2) u32, @TypeOf(&foo.a));
+    try expectEqual(*align(64) u32, @TypeOf(&foo.b));
+}
+```
+```bash
+$ zig test test_aligned_struct_fields.zig
+1/1 test_aligned_struct_fields.test.aligned struct fields...OK
+All 1 tests passed.
+```
+
+Использование упакованных структур с `volatile` проблематично и может привести к ошибке компиляции в будущем. Для
+получения подробной информации об этом подпишитесь на этот выпуск. После устранения этой проблемы обновите эти
+документы, добавив в них рекомендации по использованию упакованных структур с помощью MMIO (пример использования для
+изменчивых упакованных структур). Не волнуйтесь, в zig будет хорошее решение для этого варианта использования.
+
+
+#### Именованная структура
+
+Поскольку все структуры анонимны, **Zig** выводит имя типа на основе нескольких правил.
+
+- Если структура находится в выражении инициализации переменной ей присваивается имя в честь этой переменной.
+- Если структура находится в выражении `return`, ей присваивается имя в честь функции из которой она возвращается с
+сериализованными значениями параметров.
+- В противном случае структура получает такое имя, как (`filename.funcname.__struct_ID`).
+- Если структура объявлена внутри другой структуры, она получает имя в честь родительской структуры, так и в честь
+имени полученного в соответствии с предыдущими правилами, разделенными точкой.
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    const Foo = struct {};
+    std.debug.print("variable: {s}\n", .{@typeName(Foo)});
+    std.debug.print("anonymous: {s}\n", .{@typeName(struct {})});
+    std.debug.print("function: {s}\n", .{@typeName(List(i32))});
+}
+
+fn List(comptime T: type) type {
+    return struct {
+        x: T,
+    };
+}
+```
+```bash
+$ zig build-exe struct_name.zig
+$ ./struct_name
+variable: struct_name.main.Foo
+anonymous: struct_name.main__struct_3331
+function: struct_name.List(i32)
+```
+
+#### Анонимные структурные литералы
+
+**Zig** позволяет не указывать структурный тип литерала. При принудительном преобразовании результата структурный
+литерал непосредственно создаст экземпляр местоположения результата без копирования:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Point = struct { x: i32, y: i32 };
+
+test "anonymous struct literal" {
+    const pt: Point = .{
+        .x = 13,
+        .y = 67,
+    };
+    try expect(pt.x == 13);
+    try expect(pt.y == 67);
+}
+```
+```bash
+$ zig test test_struct_result.zig
+1/1 test_struct_result.test.anonymous struct literal...OK
+All 1 tests passed.
+```
+
+Можно определить тип структуры. Здесь результирующее местоположение не содержит тип, и поэтому **Zig** определяет тип:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "fully anonymous struct" {
+    try check(.{
+        .int = @as(u32, 1234),
+        .float = @as(f64, 12.34),
+        .b = true,
+        .s = "hi",
+    });
+}
+
+fn check(args: anytype) !void {
+    try expect(args.int == 1234);
+    try expect(args.float == 12.34);
+    try expect(args.b);
+    try expect(args.s[0] == 'h');
+    try expect(args.s[1] == 'i');
+}
+```
+```bash
+$ zig test test_anonymous_struct.zig
+1/1 test_anonymous_struct.test.fully anonymous struct...OK
+All 1 tests passed.
+```
+
+#### Кортежи
+
+Анонимные структуры могут создаваться без указания имен полей и называются "кортежами".
+
+Поля неявно именуются числами, начинающимися с 0. Поскольку их имена являются целыми числами, к ним нельзя получить
+доступ с помощью `.` синтаксиса который не включает в себя `@""`. Имена внутри `@""` всегда распознаются как
+идентификаторы.
+
+Как и массивы, кортежи имеют поле `.len` и могут индексироваться (при условии, что индекс известен во время компиляции)
+и может работать с операторами `++` и `**`. И также могут быть проитерированы с помощью `inline for`.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "tuple" {
+    const values = .{
+        @as(u32, 1234),
+        @as(f64, 12.34),
+        true,
+        "hi",
+    } ++ .{false} ** 2;
+    try expect(values[0] == 1234);
+    try expect(values[4] == false);
+    inline for (values, 0..) |v, i| {
+        if (i != 2) continue;
+        try expect(v);
+    }
+    try expect(values.len == 6);
+    try expect(values.@"3"[0] == 'h');
+}
+```
+```bash
+$ zig test test_tuples.zig
+1/1 test_tuples.test.tuple...OK
+All 1 tests passed.
+```
+------------
