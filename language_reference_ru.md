@@ -2723,4 +2723,245 @@ $ zig test test_tuples.zig
 1/1 test_tuples.test.tuple...OK
 All 1 tests passed.
 ```
+
+------------
+### Перечисление
+
+```zig
+const expect = @import("std").testing.expect;
+const mem = @import("std").mem;
+
+// Объявление  перечисления.
+const Type = enum {
+    ok,
+    not_ok,
+};
+
+// Объявление конкретного поля перечисления.
+const c = Type.ok;
+
+// Если вы хотите получить доступ к порядковому значению перечисления вы можете указать тип тега.
+const Value = enum(u2) {
+    zero,
+    one,
+    two,
+};
+// Теперь вы можете выбирать между u2 и значением.
+// Порядковое значение начинается с 0, увеличиваясь на 1 от предыдущего элемента.
+test "enum ordinal value" {
+    try expect(@intFromEnum(Value.zero) == 0);
+    try expect(@intFromEnum(Value.one) == 1);
+    try expect(@intFromEnum(Value.two) == 2);
+}
+
+// Вы можете переопределить порядковое значение для перечисления.
+const Value2 = enum(u32) {
+    hundred = 100,
+    thousand = 1000,
+    million = 1000000,
+};
+test "set enum ordinal value" {
+    try expect(@intFromEnum(Value2.hundred) == 100);
+    try expect(@intFromEnum(Value2.thousand) == 1000);
+    try expect(@intFromEnum(Value2.million) == 1000000);
+}
+
+// Вы также можете переопределить только некоторые значения.
+const Value3 = enum(u4) {
+    a,
+    b = 8,
+    c,
+    d = 4,
+    e,
+};
+test "enum implicit ordinal values and overridden values" {
+    try expect(@intFromEnum(Value3.a) == 0);
+    try expect(@intFromEnum(Value3.b) == 8);
+    try expect(@intFromEnum(Value3.c) == 9);
+    try expect(@intFromEnum(Value3.d) == 4);
+    try expect(@intFromEnum(Value3.e) == 5);
+}
+
+// У перечислений могут быть методы, такие же как у структур и объединений.
+// Перечислимые методы не являются особыми, они просто расположены в пространстве имен
+// функции, которые вы можете вызывать с помощью точечного синтаксиса.
+const Suit = enum {
+    clubs,
+    spades,
+    diamonds,
+    hearts,
+
+    pub fn isClubs(self: Suit) bool {
+        return self == Suit.clubs;
+    }
+};
+test "enum method" {
+    const p = Suit.spades;
+    try expect(!p.isClubs());
+}
+
+// An enum can be switched upon.
+const Foo = enum {
+    string,
+    number,
+    none,
+};
+test "enum switch" {
+    const p = Foo.number;
+    const what_is_it = switch (p) {
+        Foo.string => "this is a string",
+        Foo.number => "this is a number",
+        Foo.none => "this is a none",
+    };
+    try expect(mem.eql(u8, what_is_it, "this is a number"));
+}
+
+// @typeInfo может использоваться для доступа к целочисленному типу тега перечисления.
+const Small = enum {
+    one,
+    two,
+    three,
+    four,
+};
+test "std.meta.Tag" {
+    try expect(@typeInfo(Small).Enum.tag_type == u2);
+}
+
+// @typeInfo сообщает нам количество полей и их названия:
+test "@typeInfo" {
+    try expect(@typeInfo(Small).Enum.fields.len == 4);
+    try expect(mem.eql(u8, @typeInfo(Small).Enum.fields[1].name, "two"));
+}
+
+// @tagName дает представление [:0]const u8 для значения перечисления:
+test "@tagName" {
+    try expect(mem.eql(u8, @tagName(Small.three), "three"));
+}
+```
+```bash
+$ zig test test_enums.zig
+1/8 test_enums.test.enum ordinal value...OK
+2/8 test_enums.test.set enum ordinal value...OK
+3/8 test_enums.test.enum implicit ordinal values and overridden values...OK
+4/8 test_enums.test.enum method...OK
+5/8 test_enums.test.enum switch...OK
+6/8 test_enums.test.std.meta.Tag...OK
+7/8 test_enums.test.@typeInfo...OK
+8/8 test_enums.test.@tagName...OK
+All 8 tests passed.
+```
+
+#### Внешнее перечисление
+
+По-умолчанию совместимость перечислений с C ABI не гарантируется:
+
+```zig
+const Foo = enum { a, b, c };
+export fn entry(foo: Foo) void {
+    _ = foo;
+}
+```
+```bash
+$ zig build-obj enum_export_error.zig
+doc/langref/enum_export_error.zig:2:17: error: parameter of type 'enum_export_error.Foo' not allowed in function with calling convention 'C'
+export fn entry(foo: Foo) void {
+                ^~~~~~~~
+doc/langref/enum_export_error.zig:2:17: note: enum tag type 'u2' is not extern compatible
+doc/langref/enum_export_error.zig:2:17: note: only integers with 0, 8, 16, 32, 64 and 128 bits are extern compatible
+doc/langref/enum_export_error.zig:1:13: note: enum declared here
+const Foo = enum { a, b, c };
+            ^~~~~~~~~~~~~~~~
+```
+
+Для перечисления, совместимого с C-ABI, укажите явный тип тега для перечисления:
+
+```zig
+const Foo = enum(c_int) { a, b, c };
+export fn entry(foo: Foo) void {
+    _ = foo;
+}
+```
+```bash
+$ zig build-obj enum_export.zig
+```
+
+#### Литералы перечисления
+
+Литералы перечисления позволяют указывать имя поля перечисления без указания типа перечисления:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Color = enum {
+    auto,
+    off,
+    on,
+};
+
+test "enum literals" {
+    const color1: Color = .auto;
+    const color2 = Color.auto;
+    try expect(color1 == color2);
+}
+
+test "switch using enum literals" {
+    const color = Color.on;
+    const result = switch (color) {
+        .auto => false,
+        .on => true,
+        .off => false,
+    };
+    try expect(result);
+}
+```
+```bash
+$ zig test test_enum_literals.zig
+1/2 test_enum_literals.test.enum literals...OK
+2/2 test_enum_literals.test.switch using enum literals...OK
+All 2 tests passed.
+```
+
+#### Неисчерпывающее перечисление
+
+Неисчерпывающее перечисление можно создать добавив завершающее поле `_`. Перечисление должно указывать тип тега и не может
+использовать все значения перечисления.
+
+`@enumFromInt` в неисчерпывающем перечислении использует семантику безопасности `@intCast` для типа тега integer, но помимо
+этого всегда приводит к четко определенному значению перечисления.
+
+Переключатель в неполном перечислении может включать знак `_`в качестве альтернативы элементу `else`. С помощью знака `_`
+компилятор выдает ошибку если все известные имена тегов не обрабатываются переключателем.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Number = enum(u8) {
+    one,
+    two,
+    three,
+    _,
+};
+
+test "switch on non-exhaustive enum" {
+    const number = Number.one;
+    const result = switch (number) {
+        .one => true,
+        .two, .three => false,
+        _ => false,
+    };
+    try expect(result);
+    const is_one = switch (number) {
+        .one => true,
+        else => false,
+    };
+    try expect(is_one);
+}
+```
+```bash
+$ zig test test_switch_non-exhaustive.zig
+1/1 test_switch_non-exhaustive.test.switch on non-exhaustive enum...OK
+All 1 tests passed.
+```
 ------------
