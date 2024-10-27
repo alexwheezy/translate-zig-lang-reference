@@ -2964,4 +2964,243 @@ $ zig test test_switch_non-exhaustive.zig
 1/1 test_switch_non-exhaustive.test.switch on non-exhaustive enum...OK
 All 1 tests passed.
 ```
+
+------------
+### Объединение
+
+Простое объединение определяет набор возможных типов значений в виде списка полей. Одновременно может быть активным
+только одно поле. Представление простых объединений в памяти не гарантируется. Простые объединения нельзя использовать
+для переинтерпретации памяти. Для этого используйте `@ptrCast` или используйте внешнее объединение или упакованное
+объединение, которые гарантируют расположение в памяти. Доступ к неактивному полю - это неопределенное поведение,
+проверяемое с точки зрения безопасности:
+
+```zig
+const Payload = union {
+    int: i64,
+    float: f64,
+    boolean: bool,
+};
+test "simple union" {
+    var payload = Payload{ .int = 1234 };
+    payload.float = 12.34;
+}
+```
+```bash
+$ zig test test_wrong_union_access.zig
+1/1 test_wrong_union_access.test.simple union...thread 3579408 panic: access of union field 'float' while field 'int' is active
+/home/andy/src/zig/doc/langref/test_wrong_union_access.zig:8:12: 0x103ce87 in test.simple union (test)
+    payload.float = 12.34;
+           ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x1048070 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x103e08b in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103d419 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103cf81 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/bb9968225995fac0bbc9f2116e8583c2/test
+```
+
+Вы можете активировать другое поле, назначив всему объединению:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Payload = union {
+    int: i64,
+    float: f64,
+    boolean: bool,
+};
+test "simple union" {
+    var payload = Payload{ .int = 1234 };
+    try expect(payload.int == 1234);
+    payload = Payload{ .float = 12.34 };
+    try expect(payload.float == 12.34);
+}
+```
+```bash
+$ zig test test_simple_union.zig
+1/1 test_simple_union.test.simple union...OK
+All 1 tests passed.
+```
+
+Чтобы использовать switch с объединением, это должно быть объединение с тегом.
+
+Чтобы инициализировать объединение если тег является именем известным в comptime, смотрите `@unionInit`.
+
+#### Тэгированное объединение
+
+Объединения могут быть объявлены с типом тега enum. Это превращает объединение в помеченное объединение, что позволяет
+использовать его с выражениями switch.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const ComplexTypeTag = enum {
+    ok,
+    not_ok,
+};
+const ComplexType = union(ComplexTypeTag) {
+    ok: u8,
+    not_ok: void,
+};
+
+test "switch on tagged union" {
+    const c = ComplexType{ .ok = 42 };
+    try expect(@as(ComplexTypeTag, c) == ComplexTypeTag.ok);
+
+    switch (c) {
+        ComplexTypeTag.ok => |value| try expect(value == 42),
+        ComplexTypeTag.not_ok => unreachable,
+    }
+}
+
+test "get tag type" {
+    try expect(std.meta.Tag(ComplexType) == ComplexTypeTag);
+}
+```
+```bash
+$ zig test test_tagged_union.zig
+1/2 test_tagged_union.test.switch on tagged union...OK
+2/2 test_tagged_union.test.get tag type...OK
+All 2 tests passed.
+```
+
+Чтобы изменить полезную нагрузку тегированного объединения в выражении switch, поместите символ `*` перед именем
+переменной чтобы превратить его в указатель:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const ComplexTypeTag = enum {
+    ok,
+    not_ok,
+};
+const ComplexType = union(ComplexTypeTag) {
+    ok: u8,
+    not_ok: void,
+};
+
+test "modify tagged union in switch" {
+    var c = ComplexType{ .ok = 42 };
+
+    switch (c) {
+        ComplexTypeTag.ok => |*value| value.* += 1,
+        ComplexTypeTag.not_ok => unreachable,
+    }
+
+    try expect(c.ok == 43);
+}
+```
+```bash
+$ zig test test_switch_modify_tagged_union.zig
+1/1 test_switch_modify_tagged_union.test.modify tagged union in switch...OK
+All 1 tests passed.
+```
+
+Объединения могут быть созданы для определения типа тега enum. Кроме того у объединений могут быть такие же методы как
+у структур и перечислений.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Variant = union(enum) {
+    int: i32,
+    boolean: bool,
+
+    // void can be omitted when inferring enum tag type.
+    none,
+
+    fn truthy(self: Variant) bool {
+        return switch (self) {
+            Variant.int => |x_int| x_int != 0,
+            Variant.boolean => |x_bool| x_bool,
+            Variant.none => false,
+        };
+    }
+};
+
+test "union method" {
+    var v1 = Variant{ .int = 1 };
+    var v2 = Variant{ .boolean = false };
+
+    try expect(v1.truthy());
+    try expect(!v2.truthy());
+}
+```
+```bash
+$ zig test test_union_method.zig
+1/1 test_union_method.test.union method...OK
+All 1 tests passed.
+```
+
+`@tagName` может использоваться для возврата значения comptime `[:0]const u8`, представляющего имя поля:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Small2 = union(enum) {
+    a: i32,
+    b: bool,
+    c: u8,
+};
+test "@tagName" {
+    try expect(std.mem.eql(u8, @tagName(Small2.a), "a"));
+}
+```
+```bash
+$ zig test test_tagName.zig
+1/1 test_tagName.test.@tagName...OK
+All 1 tests passed.
+```
+
+#### Внешее объединение
+
+Внешнее объединение имеет структуру памяти гарантированно совместимую с целевым C ABI.
+
+#### Упакованное объединение
+
+Упакованное объединение имеет четко определенную структуру в памяти и может быть включено в упакованную структуру.
+
+#### Anonymous Union Literals
+
+Синтаксис анонимных структурных литералов может использоваться для инициализации объединений без указания типа:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Number = union {
+    int: i32,
+    float: f64,
+};
+
+test "anonymous union literal syntax" {
+    const i: Number = .{ .int = 42 };
+    const f = makeNumber();
+    try expect(i.int == 42);
+    try expect(f.float == 12.34);
+}
+
+fn makeNumber() Number {
+    return .{ .float = 12.34 };
+}
+```
+```bash
+ zig test test_anonymous_union.zig
+1/1 test_anonymous_union.test.anonymous union literal syntax...OK
+All 1 tests passed.
+```
 ------------
