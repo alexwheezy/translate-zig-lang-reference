@@ -3203,4 +3203,49 @@ fn makeNumber() Number {
 1/1 test_anonymous_union.test.anonymous union literal syntax...OK
 All 1 tests passed.
 ```
+
+------------
+### Opaque
+
+`opaque {}` объявляет новый тип с неизвестным (но ненулевым) размером и выравниванием. Он может содержать такие же
+объявления, как структуры, объединения и перечисления.
+
+Обычно это используется для обеспечения безопасности типов при взаимодействии с кодом на C, который не раскрывает детали
+структуры.
+
+Пример:
+```zig
+const Derp = opaque {};
+const Wat = opaque {};
+
+extern fn bar(d: *Derp) void;
+fn foo(w: *Wat) callconv(.C) void {
+    bar(w);
+}
+
+test "call foo" {
+    foo(undefined);
+}
+```
+```bash
+$ zig test test_opaque.zig
+doc/langref/test_opaque.zig:6:9: error: expected type '*test_opaque.Derp', found '*test_opaque.Wat'
+    bar(w);
+        ^
+doc/langref/test_opaque.zig:6:9: note: pointer type child 'test_opaque.Wat' cannot cast into pointer type child 'test_opaque.Derp'
+doc/langref/test_opaque.zig:2:13: note: opaque declared here
+const Wat = opaque {};
+            ^~~~~~~~~
+doc/langref/test_opaque.zig:1:14: note: opaque declared here
+const Derp = opaque {};
+             ^~~~~~~~~
+doc/langref/test_opaque.zig:4:18: note: parameter type declared here
+extern fn bar(d: *Derp) void;
+                 ^~~~~
+referenced by:
+    test.call foo: doc/langref/test_opaque.zig:10:5
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+
+```
+
 ------------
