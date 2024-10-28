@@ -3249,3 +3249,114 @@ referenced by:
 ```
 
 ------------
+### Блоки
+
+Блоки используются для ограничения области действия объявлений переменных:
+
+```zig
+test "access variable after block scope" {
+    {
+        var x: i32 = 1;
+        _ = &x;
+    }
+    x += 1;
+}
+```
+```bash
+$ zig test test_blocks.zig
+doc/langref/test_blocks.zig:6:5: error: use of undeclared identifier 'x'
+    x += 1;
+    ^
+```
+
+Блоки - это выражения. При наличии метки `break` можно использовать для возврата значения из блока:
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "labeled break from labeled block expression" {
+    var y: i32 = 123;
+
+    const x = blk: {
+        y += 1;
+        break :blk y;
+    };
+    try expect(x == 124);
+    try expect(y == 124);
+}
+```
+```bash
+$ zig test test_labeled_break.zig
+1/1 test_labeled_break.test.labeled break from labeled block expression...OK
+All 1 tests passed.
+```
+
+Здесь `blk` может быть любым именем.
+
+#### Затенение
+
+Идентификаторам никогда не разрешается "скрывать" другие идентификаторы используя одно и то же имя:
+```zig
+const pi = 3.14;
+
+test "inside test block" {
+    // Давайте даже зайдем в другой блок
+    {
+        var pi: i32 = 1234;
+    }
+}
+```
+```bash
+$ zig test test_shadowing.zig
+doc/langref/test_shadowing.zig:6:13: error: local variable shadows declaration of 'pi'
+        var pi: i32 = 1234;
+            ^~
+doc/langref/test_shadowing.zig:1:1: note: declared here
+const pi = 3.14;
+^~~~~~~~~~~~~~~
+```
+
+Из-за этого, когда вы читаете **Zig**-код вы всегда можете положиться на то, что идентификатор будет последовательно
+означать одно и то же в пределах определенной области. Обратите внимание, что вы можете использовать одно и то же имя,
+если области различны:
+
+```zig
+test "separate scopes" {
+    {
+        const pi = 3.14;
+        _ = pi;
+    }
+    {
+        var pi: bool = true;
+        _ = &pi;
+    }
+}
+```
+```bash
+$ zig test test_scopes.zig
+1/1 test_scopes.test.separate scopes...OK
+All 1 tests passed.
+```
+
+#### Пустые блоки
+
+Пустой блок эквивалентен `void{}`:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test {
+    const a = {};
+    const b = void{};
+    try expect(@TypeOf(a) == void);
+    try expect(@TypeOf(b) == void);
+    try expect(a == b);
+}
+```
+```bash
+$ zig test test_empty_block.zig
+1/1 test_empty_block.test_0...OK
+All 1 tests passed.
+```
+------------
