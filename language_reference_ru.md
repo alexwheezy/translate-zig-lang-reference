@@ -64,7 +64,7 @@ $ ./hello_world_again
 Hello, World!
 ```
 
-В этом случае символ ! может быть опущен в возвращаемом типе, поскольку функция не возвращает ошибок.
+В этом случае символ `!` может быть опущен в возвращаемом типе, поскольку функция не возвращает ошибок.
 
 ------------
 ### Комментарии
@@ -82,8 +82,8 @@ $ zig test -femit-docs main.zig
 const print = @import("std").debug.print;
 
 pub fn main() !void {
-    // Comments in Zig start with "//" and end at the next LF byte (end of line).
-    // The line below is a comment and won't be executed.
+    // Комментарии в Zig начинаются с "//" и заканчиваются на следующем LF-байте (конце строки).
+    // Строка ниже является комментарием и не будет выполнена.
 
     //print("Hello?", .{});
     print("Hello, World!\n", .{});
@@ -311,7 +311,7 @@ value: 1234
 
 Строковые литералы - это константные одноэлементные указатели на массивы байтов заканчивающиеся нулем. Тип строковых
 литералов кодирует как длину, так и тот факт, что они заканчиваются нулем и таким образом, они могут быть
-преобразованы как в слайсы, так и в указатели, заканчивающиеся нулем. Разыменование строковых литералов преобразует
+преобразованы как в срезы, так и в указатели, заканчивающиеся нулем. Разыменование строковых литералов преобразует
 их в массивы.
 
 Поскольку исходный код **Zig** закодирован в UTF-8, любые байты, отличающиеся от ASCII, появляющиеся в строковом литерале в
@@ -1416,13 +1416,13 @@ TODO consider suggesting std.MultiArrayList
     - `T` должен иметь известный размер, что означает, что он не может быть константным или каким-либо другим
     непрозрачным типом.
 
-Эти типы тесно связаны с массивами и слайсами:
+Эти типы тесно связаны с массивами и срезами:
 - `*[N]T` - указатель на N элементов, такой же как одноэлементный указатель на массив.
     - Поддерживает синтаксис индекса: `array_ptr[i]`
     - Поддерживает синтаксис срезов: `array_ptr[start..end]`
     - Поддерживает свойство длины: `array_ptr.len`
 
-- `[]T` - это слайс (толстый указатель который содержит указатель типа `[*]T` и длину).
+- `[]T` - это срез (толстый указатель который содержит указатель типа `[*]T` и длину).
     - Поддерживает синтаксис индекса: `slice[i]`
     - Поддерживает синтаксис срезов: `slice[start..end]`
     - Поддерживает свойство длины: `slice.len`
@@ -1623,7 +1623,7 @@ All 1 tests passed.
 Обратите внимание, что `volatile` не связан с параллелизмом и атомарностью. Если вы видите код который использует
 `volatile` для чего-то другого кроме ввода/вывода с отображением в памяти, то это вероятно ошибка.
 
-`@ptrCast` преобразует тип элемента указателя в другой. Это создает новый указатель, который может вызвать неопределяемое
+`@ptrCast` преобразует тип элемента указателя в другой. Это создает новый указатель, который может вызвать неопределимое
 незаконное поведение в зависимости от загружаемых данных и хранилищ, которые проходят через него. Как правило, другие
 виды преобразования типов предпочтительнее чем `@ptrCast`, если это возможно.
 
@@ -1689,7 +1689,7 @@ $ zig test test_variable_alignment.zig
 All 1 tests passed.
 ```
 
-Точно так же как a `*i32` может быть преобразован в `*const i32`, указатель с большим выравниванием может быть неявно
+Точно так же как `*i32` может быть преобразован в `*const i32`, указатель с большим выравниванием может быть неявно
 преобразован в указатель с меньшим выравниванием, но не наоборот.
 
 Вы можете указать выравнивание для переменных и функций. Если вы сделаете это, то указатели на них получат указанное
@@ -1736,7 +1736,7 @@ $ zig test test_variable_func_alignment.zig
 All 2 tests passed.
 ```
 
-Если у вас есть указатель или слайс который имеет небольшое выравнивание, но вы знаете, что на самом деле он имеет
+Если у вас есть указатель или срез который имеет небольшое выравнивание, но вы знаете, что на самом деле он имеет
 большее выравнивание используйте `@alignCast` чтобы изменить указатель на более выровненный. Во время выполнения это не
 требуется, но вставляется проверка безопасности:
 
@@ -3357,6 +3357,341 @@ test {
 ```bash
 $ zig test test_empty_block.zig
 1/1 test_empty_block.test_0...OK
+All 1 tests passed.
+```
+
+------------
+### Switch
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const expect = std.testing.expect;
+
+test "switch simple" {
+    const a: u64 = 10;
+    const zz: u64 = 103;
+
+    // Все ветви выражения switch должны быть приведены к общему типу.
+    // Переходы между ветвями не могут быть завершены с ошибками. Если требуется выполнение с ошибками, объедините
+    // варианты и используйте if.
+    const b = switch (a) {
+        // Несколько обращений могут быть объединены с помощью ','
+        1, 2, 3 => 0,
+
+        // Диапазоны могут быть заданы с помощью ... синтаксиса. Они являются всеобъемлющими с обоих концов.
+        5...100 => 1,
+
+        // Ветви могут быть сколь угодно сложными.
+        101 => blk: {
+            const c: u64 = 5;
+            break :blk c * 2 + 1;
+        },
+
+        // Включение произвольных выражений допускается до тех пор, пока
+        // выражение известно во время компиляции.
+        zz => zz,
+        blk: {
+            const d: u32 = 5;
+            const e: u32 = 100;
+            break :blk d + e;
+        } => 107,
+
+        // Ветвь else перехватывает все, что еще не захвачено.
+        // Ветви else являются обязательными, если не обрабатывается весь диапазон значений.
+        else => 9,
+    };
+
+    try expect(b == 1);
+}
+
+// Выражения switch могут использоваться вне функции:
+const os_msg = switch (builtin.target.os.tag) {
+    .linux => "we found a linux user",
+    else => "not a linux user",
+};
+
+// Внутри функции операторы switch неявно выполняются во время компиляции
+// вычисляются если целевое выражение известно во время компиляции.
+test "switch inside function" {
+    switch (builtin.target.os.tag) {
+        .fuchsia => {
+            // В операционной системе, отличной от fuchsia блок даже не анализируется,
+            // поэтому эта ошибка компиляции не запускается.
+            // В fuchsia эта ошибка компиляции была бы запущена.
+            @compileError("fuchsia not supported");
+        },
+        else => {},
+    }
+}
+```
+```bash
+$ zig test test_switch.zig
+1/2 test_switch.test.switch simple...OK
+2/2 test_switch.test.switch inside function...OK
+All 2 tests passed.
+```
+
+`switch` можно использовать для записи значений полей в объединении с тегами. Для изменения значений полей перед
+именем переменной записи можно поместить символ `*`, превратив его в указатель.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "switch on tagged union" {
+    const Point = struct {
+        x: u8,
+        y: u8,
+    };
+    const Item = union(enum) {
+        a: u32,
+        c: Point,
+        d,
+        e: u32,
+    };
+
+    var a = Item{ .c = Point{ .x = 1, .y = 2 } };
+
+    // Допускается включение более сложных перечислений.
+    const b = switch (a) {
+        // Группа захвата разрешена для совпадения и вернет перечисление
+        // значение совпадает. Если типы полезной нагрузки в обоих случаях одинаковы
+        // их можно поместить в один и тот же контакт коммутатора.
+        Item.a, Item.e => |item| item,
+
+        // Ссылка на сопоставленное значение может быть получена с помощью синтаксиса `*`.
+        Item.c => |*item| blk: {
+            item.*.x += 1;
+            break :blk 6;
+        },
+
+        // Больше ничего не требуется, если все типы обращений были обработаны исчерпывающим образом
+        Item.d => 8,
+    };
+
+    try expect(b == 6);
+    try expect(a.c.x == 2);
+}
+```
+```bash
+$ zig test test_switch_tagged_union.zig
+1/1 test_switch_tagged_union.test.switch on tagged union...OK
+All 1 tests passed.
+```
+
+#### Exhaustive Switching
+
+Если выражение `switch` не содержит предложения `else`, оно должно содержать исчерпывающий список всех возможных значений.
+Невыполнение этого требования является ошибкой компиляции:
+
+```zig
+const Color = enum {
+    auto,
+    off,
+    on,
+};
+
+test "exhaustive switching" {
+    const color = Color.off;
+    switch (color) {
+        Color.auto => {},
+        Color.on => {},
+    }
+}
+```
+```bash
+$ zig test test_unhandled_enumeration_value.zig
+doc/langref/test_unhandled_enumeration_value.zig:9:5: error: switch must handle all possibilities
+    switch (color) {
+    ^~~~~~
+doc/langref/test_unhandled_enumeration_value.zig:3:5: note: unhandled enumeration value: 'off'
+    off,
+    ^~~
+doc/langref/test_unhandled_enumeration_value.zig:1:15: note: enum 'test_unhandled_enumeration_value.Color' declared here
+const Color = enum {
+              ^~~~
+```
+
+#### Switching with Enum Literals
+
+Enum Literals может быть полезно использовать с `switch`, чтобы избежать повторного указания типов перечислений или
+объединений:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Color = enum {
+    auto,
+    off,
+    on,
+};
+
+test "enum literals with switch" {
+    const color = Color.off;
+    const result = switch (color) {
+        .auto => false,
+        .on => false,
+        .off => true,
+    };
+    try expect(result);
+}
+```
+```bash
+$ zig test test_exhaustive_switch.zig
+1/1 test_exhaustive_switch.test.enum literals with switch...OK
+All 1 tests passed.
+```
+
+#### Inline Switch Prongs
+
+Переключающие элементы могут быть помечены как встроенные чтобы генерировать тело элемента для каждого возможного
+значения которое он может иметь, что делает захваченное значение `comptime`.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const expectError = std.testing.expectError;
+
+fn isFieldOptional(comptime T: type, field_index: usize) !bool {
+    const fields = @typeInfo(T).Struct.fields;
+    return switch (field_index) {
+        // Этот параметр анализируется дважды, и каждый раз `idx` является
+        // значением, известным по времени выполнения.
+        inline 0, 1 => |idx| @typeInfo(fields[idx].type) == .Optional,
+        else => return error.IndexOutOfBounds,
+    };
+}
+
+const Struct1 = struct { a: u32, b: ?u32 };
+
+test "using @typeInfo with runtime values" {
+    var index: usize = 0;
+    try expect(!try isFieldOptional(Struct1, index));
+    index += 1;
+    try expect(try isFieldOptional(Struct1, index));
+    index += 1;
+    try expectError(error.IndexOutOfBounds, isFieldOptional(Struct1, index));
+}
+
+// Вызовы `isFieldOptional` в `Struct1` преобразуются в эквивалент
+// этой функции:
+fn isFieldOptionalUnrolled(field_index: usize) !bool {
+    return switch (field_index) {
+        0 => false,
+        1 => true,
+        else => return error.IndexOutOfBounds,
+    };
+}
+```
+```bash
+$ zig test test_inline_switch.zig
+1/1 test_inline_switch.test.using @typeInfo with runtime values...OK
+All 1 tests passed.
+```
+
+Ключевое слово `inline` также может сочетаться с диапазонами:
+
+```zig
+fn isFieldOptional(comptime T: type, field_index: usize) !bool {
+    const fields = @typeInfo(T).Struct.fields;
+    return switch (field_index) {
+        inline 0...fields.len - 1 => |idx| @typeInfo(fields[idx].type) == .Optional,
+        else => return error.IndexOutOfBounds,
+    };
+}
+```
+
+Элементы `inline else` можно использовать в качестве типобезопасной альтернативы циклам `inline for`:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const SliceTypeA = extern struct {
+    len: usize,
+    ptr: [*]u32,
+};
+const SliceTypeB = extern struct {
+    ptr: [*]SliceTypeA,
+    len: usize,
+};
+const AnySlice = union(enum) {
+    a: SliceTypeA,
+    b: SliceTypeB,
+    c: []const u8,
+    d: []AnySlice,
+};
+
+fn withFor(any: AnySlice) usize {
+    const Tag = @typeInfo(AnySlice).Union.tag_type.?;
+    inline for (@typeInfo(Tag).Enum.fields) |field| {
+        // При использовании `inline for` функция генерируется как
+        // серия инструкций `if`, зависящих от оптимизатора
+        // для преобразования ее в switch.
+        if (field.value == @intFromEnum(any)) {
+            return @field(any, field.name).len;
+        }
+    }
+    // При использовании `inline for` компилятор не знает, что был обработан каждый
+    // возможный случай, требующий явного указания `unreachable`.
+    unreachable;
+}
+
+fn withSwitch(any: AnySlice) usize {
+    return switch (any) {
+        // При использовании `inline else` функция генерируется явно
+        // в качестве желаемого параметра, и компилятор может проверить, что
+        // обработаны все возможные варианты.
+        inline else => |slice| slice.len,
+    };
+}
+
+test "inline for and inline else similarity" {
+    const any = AnySlice{ .c = "hello" };
+    try expect(withFor(any) == 5);
+    try expect(withSwitch(any) == 5);
+}
+```
+```bash
+$ zig test test_inline_else.zig
+1/1 test_inline_else.test.inline for and inline else similarity...OK
+All 1 tests passed.
+```
+
+При использовании встроенного переключателя контактов для объединения можно использовать дополнительный захват для
+получения значения тега перечисления объединения.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const U = union(enum) {
+    a: u32,
+    b: f32,
+};
+
+fn getNum(u: U) u32 {
+    switch (u) {
+        // Здесь "num" - это известное во время выполнения значение, которое может быть либо
+        // `u.a", либо "u.b", а "tag" - это значение тега, известное во время выполнения.
+        inline else => |num, tag| {
+            if (tag == .b) {
+                return @intFromFloat(num);
+            }
+            return num;
+        },
+    }
+}
+
+test "test" {
+    const u = U{ .b = 42 };
+    try expect(getNum(u) == 42);
+}
+```
+```bash
+$ zig test test_inline_switch_union_tag.zig
+1/1 test_inline_switch_union_tag.test.test...OK
 All 1 tests passed.
 ```
 ------------
