@@ -3694,4 +3694,289 @@ $ zig test test_inline_switch_union_tag.zig
 1/1 test_inline_switch_union_tag.test.test...OK
 All 1 tests passed.
 ```
+
+------------
+### While
+
+Цикл while используется для многократного выполнения выражения до тех пор пока какое-либо условие не перестанет
+выполняться.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while basic" {
+    var i: usize = 0;
+    while (i < 10) {
+        i += 1;
+    }
+    try expect(i == 10);
+}
+```
+```bash
+$ zig test test_while.zig
+1/1 test_while.test.while basic...OK
+All 1 tests passed.
+```
+
+Используйте `break` для раннего выхода из цикла while.
+
+```zig
+test_while_break.zig
+
+const expect = @import("std").testing.expect;
+
+test "while break" {
+    var i: usize = 0;
+    while (true) {
+        if (i == 10)
+            break;
+        i += 1;
+    }
+    try expect(i == 10);
+}
+```
+```bash
+$ zig test test_while_break.zig
+1/1 test_while_break.test.while break...OK
+All 1 tests passed.
+```
+
+Используйте `continue` чтобы вернуться к началу цикла.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while continue" {
+    var i: usize = 0;
+    while (true) {
+        i += 1;
+        if (i < 10)
+            continue;
+        break;
+    }
+    try expect(i == 10);
+}
+```
+```bash
+$ zig test test_while_continue.zig
+1/1 test_while_continue.test.while continue...OK
+All 1 tests passed.
+```
+
+Циклы while поддерживают выражение continue которое выполняется при продолжении цикла. Ключевое слово `continue`
+соответствует этому выражению.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while loop continue expression" {
+    var i: usize = 0;
+    while (i < 10) : (i += 1) {}
+    try expect(i == 10);
+}
+
+test "while loop continue expression, more complicated" {
+    var i: usize = 1;
+    var j: usize = 1;
+    while (i * j < 2000) : ({
+        i *= 2;
+        j *= 3;
+    }) {
+        const my_ij = i * j;
+        try expect(my_ij < 2000);
+    }
+}
+```
+```bash
+$ zig test test_while_continue_expression.zig
+1/2 test_while_continue_expression.test.while loop continue expression...OK
+2/2 test_while_continue_expression.test.while loop continue expression, more complicated...OK
+All 2 tests passed.
+```
+
+Циклы while являются выражениями. Результатом выражения является результат предложения `else` цикла while который
+выполняется когда условие цикла while проверяется как ложное.
+
+`break` как и `return` принимает параметр value. Это результат выражения `while`. Когда вы выходите из цикла while, ветвь
+`else` не вычисляется.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while else" {
+    try expect(rangeHasNumber(0, 10, 5));
+    try expect(!rangeHasNumber(0, 10, 15));
+}
+
+fn rangeHasNumber(begin: usize, end: usize, number: usize) bool {
+    var i = begin;
+    return while (i < end) : (i += 1) {
+        if (i == number) {
+            break true;
+        }
+    } else false;
+}
+```
+```bash
+$ zig test test_while_else.zig
+1/1 test_while_else.test.while else...OK
+All 1 tests passed.
+```
+
+#### Labeled while
+
+Когда цикл `while` имеет отметку, то на него можно ссылаться из `break` или `continue` из вложенного цикла:
+
+```zig
+test "nested break" {
+    outer: while (true) {
+        while (true) {
+            break :outer;
+        }
+    }
+}
+
+test "nested continue" {
+    var i: usize = 0;
+    outer: while (i < 10) : (i += 1) {
+        while (true) {
+            continue :outer;
+        }
+    }
+}
+```
+```bash
+$ zig test test_while_nested_break.zig
+1/2 test_while_nested_break.test.nested break...OK
+2/2 test_while_nested_break.test.nested continue...OK
+All 2 tests passed.
+```
+
+#### while with Optionals
+
+Так же, как и в выражениях if, циклы while могут принимать необязательное значение в качестве условия и получать
+полезную нагрузку. При обнаружении значения null цикл завершается.
+
+Когда в выражении while присутствует синтаксис `|x|`, условие `while` должно иметь необязательный тип.
+
+Ветвь `else` разрешена для необязательной итерации. В этом случае он будет выполнен при первом обнаруженном нулевом
+значении.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while null capture" {
+    var sum1: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyNullSequence()) |value| {
+        sum1 += value;
+    }
+    try expect(sum1 == 3);
+
+    // захват нулевого значения с помощью блока else
+    var sum2: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyNullSequence()) |value| {
+        sum2 += value;
+    } else {
+        try expect(sum2 == 3);
+    }
+
+    // захват нулевого значения с помощью выражения continue
+    var i: u32 = 0;
+    var sum3: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyNullSequence()) |value| : (i += 1) {
+        sum3 += value;
+    }
+    try expect(i == 3);
+}
+
+var numbers_left: u32 = undefined;
+fn eventuallyNullSequence() ?u32 {
+    return if (numbers_left == 0) null else blk: {
+        numbers_left -= 1;
+        break :blk numbers_left;
+    };
+}
+```
+```bash
+$ zig test test_while_null_capture.zig
+1/1 test_while_null_capture.test.while null capture...OK
+All 1 tests passed.
+```
+
+#### while with Error Unions
+
+Как и в случае с выражениями if, циклы while могут принимать union с ошибкой в качестве условия и получать
+полезную нагрузку или код ошибки. Когда результатом выполнения условия является код ошибки, вычисляется ветвь else и
+цикл завершается.
+
+Когда синтаксис `else |x|` присутствует в выражении while, условие while должно иметь тип Error Union Type.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "while error union capture" {
+    var sum1: u32 = 0;
+    numbers_left = 3;
+    while (eventuallyErrorSequence()) |value| {
+        sum1 += value;
+    } else |err| {
+        try expect(err == error.ReachedZero);
+    }
+}
+
+var numbers_left: u32 = undefined;
+
+fn eventuallyErrorSequence() anyerror!u32 {
+    return if (numbers_left == 0) error.ReachedZero else blk: {
+        numbers_left -= 1;
+        break :blk numbers_left;
+    };
+}
+```
+```bash
+$ zig test test_while_error_capture.zig
+1/1 test_while_error_capture.test.while error union capture...OK
+All 1 tests passed.
+```
+
+#### inline while
+
+Циклы while могут быть встроены. Это приводит к развертыванию цикла, что позволяет коду выполнять некоторые
+действия которые работают только во время компиляции, например, использовать типы в качестве значений первого класса.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "inline while loop" {
+    comptime var i = 0;
+    var sum: usize = 0;
+    inline while (i < 3) : (i += 1) {
+        const T = switch (i) {
+            0 => f32,
+            1 => i8,
+            2 => bool,
+            else => unreachable,
+        };
+        sum += typeNameLength(T);
+    }
+    try expect(sum == 9);
+}
+
+fn typeNameLength(comptime T: type) usize {
+    return @typeName(T).len;
+}
+```
+```bash
+$ zig test test_inline_while.zig
+1/1 test_inline_while.test.inline while loop...OK
+All 1 tests passed.
+```
+
+Рекомендуется использовать `inline` циклы только по одной из этих причин:
+- Для того чтобы семантика работала необходимо чтобы цикл выполнялся во время компиляции.
+- У вас есть тест который докажет, что принудительное развертывание цикла таким образом значительно быстрее.
+
 ------------
