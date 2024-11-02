@@ -3980,3 +3980,178 @@ All 1 tests passed.
 - У вас есть тест который докажет, что принудительное развертывание цикла таким образом значительно быстрее.
 
 ------------
+
+### for
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "for basics" {
+    const items = [_]i32{ 4, 5, 3, 4, 0 };
+    var sum: i32 = 0;
+
+    // Циклы for выполняют итерацию по срезам и массивам.
+    for (items) |value| {
+        // Поддерживает break и continue.
+        if (value == 0) {
+            continue;
+        }
+        sum += value;
+    }
+    try expect(sum == 16);
+
+    // Чтобы выполнить итерацию по части среза выполните повторную итерацию.
+    for (items[0..1]) |value| {
+        sum += value;
+    }
+    try expect(sum == 20);
+
+    // Чтобы получить доступ к индексу итерации, укажите также второе условие
+    // в качестве второго значения для записи.
+    var sum2: i32 = 0;
+    for (items, 0..) |_, i| {
+        try expect(@TypeOf(i) == usize);
+        sum2 += @as(i32, @intCast(i));
+    }
+    try expect(sum2 == 10);
+
+    // Для перебора последовательных целых чисел используйте синтаксис range.
+    // Неограниченный диапазон всегда является ошибкой компиляции.
+    var sum3: usize = 0;
+    for (0..5) |i| {
+        sum3 += i;
+    }
+    try expect(sum3 == 10);
+}
+
+test "multi object for" {
+    const items = [_]usize{ 1, 2, 3 };
+    const items2 = [_]usize{ 4, 5, 6 };
+    var count: usize = 0;
+
+    // Выполнить итерацию по нескольким объектам.
+    // В начале цикла все длины должны быть равны, в противном случае будет обнаружено недопустимое поведение.
+    for (items, items2) |i, j| {
+        count += i + j;
+    }
+
+    try expect(count == 21);
+}
+
+test "for reference" {
+    var items = [_]i32{ 3, 4, 2 };
+
+    // Выполните итерацию по срезу по ссылке, указав, что значение захвата является указателем.
+    for (&items) |*value| {
+        value.* += 1;
+    }
+
+    try expect(items[0] == 4);
+    try expect(items[1] == 5);
+    try expect(items[2] == 3);
+}
+
+test "for else" {
+    // for допускает присоединение к нему else, аналогично циклу while.
+    const items = [_]?i32{ 3, 4, null, 5 };
+
+    // Циклы for также могут использоваться в качестве выражений.
+    // Аналогично циклам while, когда вы прерываете цикл for ветвь else не вычисляется.
+    var sum: i32 = 0;
+    const result = for (items) |value| {
+        if (value != null) {
+            sum += value.?;
+        }
+    } else blk: {
+        try expect(sum == 12);
+        break :blk sum;
+    };
+    try expect(result == 12);
+}
+```
+```bash
+$ zig test test_for.zig
+1/4 test_for.test.for basics...OK
+2/4 test_for.test.multi object for...OK
+3/4 test_for.test.for reference...OK
+4/4 test_for.test.for else...OK
+All 4 tests passed.
+```
+
+#### Labeled for
+
+Когда цикл for отмечен как блок на него можно ссылаться из `break` или `continue` из вложенного цикла:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "nested break" {
+    var count: usize = 0;
+    outer: for (1..6) |_| {
+        for (1..6) |_| {
+            count += 1;
+            break :outer;
+        }
+    }
+    try expect(count == 1);
+}
+
+test "nested continue" {
+    var count: usize = 0;
+    outer: for (1..9) |_| {
+        for (1..6) |_| {
+            count += 1;
+            continue :outer;
+        }
+    }
+
+    try expect(count == 8);
+}
+```
+```bash
+$ zig test test_for_nested_break.zig
+1/2 test_for_nested_break.test.nested break...OK
+2/2 test_for_nested_break.test.nested continue...OK
+All 2 tests passed.
+```
+
+#### inline for
+
+Циклы for могут быть встроены. Это приводит к развертыванию цикла, что позволяет коду выполнять некоторые действия,
+которые работают только во время компиляции, например, использовать типы в качестве значений первого класса. Значение
+захвата и значение итератора встроенных циклов for известны во время компиляции.
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "inline for loop" {
+    const nums = [_]i32{ 2, 4, 6 };
+    var sum: usize = 0;
+    inline for (nums) |i| {
+        const T = switch (i) {
+            2 => f32,
+            4 => i8,
+            6 => bool,
+            else => unreachable,
+        };
+        sum += typeNameLength(T);
+    }
+    try expect(sum == 9);
+}
+
+fn typeNameLength(comptime T: type) usize {
+    return @typeName(T).len;
+}
+```
+```bash
+$ zig test test_inline_for.zig
+1/1 test_inline_for.test.inline for loop...OK
+All 1 tests passed.
+```
+
+Рекомендуется использовать `inline` циклы только по одной из этих причин:
+- Для того чтобы семантика работала необходимо чтобы цикл выполнялся во время компиляции.
+- У вас есть тест который докажет, что принудительное развертывание цикла таким образом значительно быстрее.
+
+------------
