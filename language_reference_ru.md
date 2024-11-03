@@ -4155,3 +4155,184 @@ All 1 tests passed.
 - У вас есть тест который докажет, что принудительное развертывание цикла таким образом значительно быстрее.
 
 ------------
+### if
+
+```zig
+// У выражений if есть три варианта использования соответствующие трем типам:
+// * bool
+// * ?T
+// * anyerror!T
+
+const expect = @import("std").testing.expect;
+
+test "if expression" {
+    // Вместо if выражения можно использовать тернарное выражение
+    const a: u32 = 5;
+    const b: u32 = 4;
+    const result = if (a != b) 47 else 3089;
+    try expect(result == 47);
+}
+
+test "if boolean" {
+    // Выражения if проверяют логические условия.
+    const a: u32 = 5;
+    const b: u32 = 4;
+    if (a != b) {
+        try expect(true);
+    } else if (a == 9) {
+        unreachable;
+    } else {
+        unreachable;
+    }
+}
+
+test "if error union" {
+    // Если выражения проверяются на наличие ошибок.
+    // Обратите внимание на запись |err| в else.
+
+    const a: anyerror!u32 = 0;
+    if (a) |value| {
+        try expect(value == 0);
+    } else |err| {
+        _ = err;
+        unreachable;
+    }
+
+    const b: anyerror!u32 = error.BadValue;
+    if (b) |value| {
+        _ = value;
+        unreachable;
+    } else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    // else и |err| захват строго обязательны.
+    if (a) |value| {
+        try expect(value == 0);
+    } else |_| {}
+
+    // Чтобы проверить только значение ошибки, используйте пустое блочное выражение.
+    if (b) |_| {} else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    // Доступ к значению осуществляется по ссылке с помощью захвата указателя.
+    var c: anyerror!u32 = 3;
+    if (c) |*value| {
+        value.* = 9;
+    } else |_| {
+        unreachable;
+    }
+
+    if (c) |value| {
+        try expect(value == 9);
+    } else |_| {
+        unreachable;
+    }
+}
+```
+```bash
+$ zig test test_if.zig
+1/3 test_if.test.if expression...OK
+2/3 test_if.test.if boolean...OK
+3/3 test_if.test.if error union...OK
+All 3 tests passed.
+```
+
+#### if with Optionals
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "if optional" {
+    // if выражения проверяются на наличие null.
+
+    const a: ?u32 = 0;
+    if (a) |value| {
+        try expect(value == 0);
+    } else {
+        unreachable;
+    }
+
+    const b: ?u32 = null;
+    if (b) |_| {
+        unreachable;
+    } else {
+        try expect(true);
+    }
+
+    // Остальное не требуется.
+    if (a) |value| {
+        try expect(value == 0);
+    }
+
+    // Чтобы проверить только значение null используйте оператор двойного равенства.
+    if (b == null) {
+        try expect(true);
+    }
+
+    // Доступ к значению осуществляется по ссылке с помощью захвата указателя.
+    var c: ?u32 = 3;
+    if (c) |*value| {
+        value.* = 2;
+    }
+
+    if (c) |value| {
+        try expect(value == 2);
+    } else {
+        unreachable;
+    }
+}
+
+test "if error union with optional" {
+    // Выражения if проверяются на наличие ошибок перед развертыванием параметров.
+    // Тип |optional_value| capture равен ?u32.
+
+    const a: anyerror!?u32 = 0;
+    if (a) |optional_value| {
+        try expect(optional_value.? == 0);
+    } else |err| {
+        _ = err;
+        unreachable;
+    }
+
+    const b: anyerror!?u32 = null;
+    if (b) |optional_value| {
+        try expect(optional_value == null);
+    } else |_| {
+        unreachable;
+    }
+
+    const c: anyerror!?u32 = error.BadValue;
+    if (c) |optional_value| {
+        _ = optional_value;
+        unreachable;
+    } else |err| {
+        try expect(err == error.BadValue);
+    }
+
+    // Доступ к значению осуществляется по ссылке, каждый раз используя захват указателя.
+    var d: anyerror!?u32 = 3;
+    if (d) |*optional_value| {
+        if (optional_value.*) |*value| {
+            value.* = 9;
+        }
+    } else |_| {
+        unreachable;
+    }
+
+    if (d) |optional_value| {
+        try expect(optional_value.? == 9);
+    } else |_| {
+        unreachable;
+    }
+}
+```
+```bash
+$ zig test test_if_optionals.zig
+1/2 test_if_optionals.test.if optional...OK
+2/2 test_if_optionals.test.if error union with optional...OK
+All 2 tests passed.
+```
+
+------------
