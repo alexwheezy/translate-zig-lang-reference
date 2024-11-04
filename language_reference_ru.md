@@ -4336,3 +4336,87 @@ All 2 tests passed.
 ```
 
 ------------
+### defer
+
+Выполняет выражение безоговорочно при выходе из области видимости.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const print = std.debug.print;
+
+fn deferExample() !usize {
+    var a: usize = 1;
+
+    {
+        defer a = 2;
+        a = 1;
+    }
+    try expect(a == 2);
+
+    a = 5;
+    return a;
+}
+
+test "defer basics" {
+    try expect((try deferExample()) == 5);
+}
+```
+```bash
+$ zig test test_defer.zig
+1/1 test_defer.test.defer basics...OK
+All 1 tests passed.
+```
+
+Отложенные выражения вычисляются в обратном порядке.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const print = std.debug.print;
+
+test "defer unwinding" {
+    print("\n", .{});
+
+    defer {
+        print("1 ", .{});
+    }
+    defer {
+        print("2 ", .{});
+    }
+    if (false) {
+        // отложенные запросы не запускаются, если они никогда не выполняются.
+        defer {
+            print("3 ", .{});
+        }
+    }
+}
+```
+```bash
+$ zig test defer_unwind.zig
+1/1 defer_unwind.test.defer unwinding...
+2 1 OK
+All 1 tests passed.
+```
+
+Внутри выражения defer оператор return не допускается.
+
+```zig
+fn deferInvalidExample() !void {
+    defer {
+        return error.DeferError;
+    }
+
+    return error.DeferError;
+}
+```
+```bash
+$ zig test test_invalid_defer.zig
+doc/langref/test_invalid_defer.zig:3:9: error: cannot return from defer expression
+        return error.DeferError;
+        ^~~~~~~~~~~~~~~~~~~~~~~
+doc/langref/test_invalid_defer.zig:2:5: note: defer expression here
+    defer {
+    ^~~~~
+```
+------------
