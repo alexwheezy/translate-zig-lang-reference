@@ -4419,4 +4419,98 @@ doc/langref/test_invalid_defer.zig:2:5: note: defer expression here
     defer {
     ^~~~~
 ```
+
+------------
+### unreachable
+
+В режимах Debug и ReleaseSafe функция `unreachable` вызывает `panic` с сообщением `reached unreachable code`.
+
+В режимах ReleaseFast и ReleaseSmall оптимизатор использует предположение о том, что недоступный код никогда не будет
+запущен для выполнения оптимизаций.
+
+#### Basics
+
+```zig
+// unreachable используется для утверждения, что поток управления никогда не достигнет
+// определенного местоположения:
+test "basic math" {
+    const x = 1;
+    const y = 2;
+    if (x + y != 3) {
+        unreachable;
+    }
+}
+```
+```bash
+
+$ zig test test_unreachable.zig
+1/1 test_unreachable.test.basic math...OK
+All 1 tests passed.
+```
+
+Фактически, именно так реализован `std.debug.assert`:
+
+```zig
+// Вот как реализован std.debug.assert
+fn assert(ok: bool) void {
+    if (!ok) unreachable; // assertion failure
+}
+
+// Этот тест завершится неудачей, потому что мы попали в недостижимую область.
+test "this will fail" {
+    assert(false);
+}
+```
+```bash
+$ zig test test_assertion_failure.zig
+1/1 test_assertion_failure.test.this will fail...thread 3571599 panic: reached unreachable code
+/home/andy/src/zig/doc/langref/test_assertion_failure.zig:3:14: 0x103cd9d in assert (test)
+    if (!ok) unreachable; // assertion failure
+             ^
+/home/andy/src/zig/doc/langref/test_assertion_failure.zig:8:11: 0x103cd5a in test.this will fail (test)
+    assert(false);
+          ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x10479a0 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x103dbbb in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103d249 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103cdb1 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/a6b3ce5875a9e285c15739b2a1b30733/test
+
+```
+
+#### At Compile-Time
+
+```zig
+const assert = @import("std").debug.assert;
+
+test "type of unreachable" {
+    comptime {
+        // Тип unreachable - noreturn.
+
+        // Однако это утверждение все равно не удастся скомпилировать, поскольку
+        // Выражения unreachable являются ошибками компиляции.
+
+        assert(@TypeOf(unreachable) == noreturn);
+    }
+}
+```
+```bash
+$ zig test test_comptime_unreachable.zig
+doc/langref/test_comptime_unreachable.zig:10:16: error: unreachable code
+        assert(@TypeOf(unreachable) == noreturn);
+               ^~~~~~~~~~~~~~~~~~~~
+doc/langref/test_comptime_unreachable.zig:10:24: note: control flow is diverted here
+        assert(@TypeOf(unreachable) == noreturn);
+                       ^~~~~~~~~~~
+```
 ------------
