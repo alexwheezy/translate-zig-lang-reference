@@ -4513,4 +4513,57 @@ doc/langref/test_comptime_unreachable.zig:10:24: note: control flow is diverted 
         assert(@TypeOf(unreachable) == noreturn);
                        ^~~~~~~~~~~
 ```
+
+------------
+### noreturn
+
+`noreturn` - это тип:
+- `break`
+- `continue`
+- `return`
+- `unreachable`
+- `while (true) {}`
+
+При совместном разрешении типов таких как `if` или `switch`, тип `noreturn` совместим со всеми другими
+типами. Считать:
+
+```zig
+fn foo(condition: bool, b: u32) void {
+    const a = if (condition) b else return;
+    _ = a;
+    @panic("do something with a");
+}
+test "noreturn" {
+    foo(false, 1);
+}
+```
+```bash
+$ zig test test_noreturn.zig
+1/1 test_noreturn.test.noreturn...OK
+All 1 tests passed.
+```
+
+Другим вариантом использования `noreturn` является функция `exit`:
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const native_arch = builtin.cpu.arch;
+const expect = std.testing.expect;
+
+const WINAPI: std.builtin.CallingConvention = if (native_arch == .x86) .Stdcall else .C;
+extern "kernel32" fn ExitProcess(exit_code: c_uint) callconv(WINAPI) noreturn;
+
+test "foo" {
+    const value = bar() catch ExitProcess(1);
+    try expect(value == 1234);
+}
+
+fn bar() anyerror!u32 {
+    return 1234;
+}
+```
+```bash
+$ zig test test_noreturn_from_exit.zig -target x86_64-windows --test-no-exec
+```
 ------------
