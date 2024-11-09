@@ -4566,4 +4566,202 @@ fn bar() anyerror!u32 {
 ```bash
 $ zig test test_noreturn_from_exit.zig -target x86_64-windows --test-no-exec
 ```
+
+------------
+### Functions
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const native_arch = builtin.cpu.arch;
+const expect = std.testing.expect;
+
+// Функции объявляются следующим образом
+fn add(a: i8, b: i8) i8 {
+    if (a == 0) {
+        return b;
+    }
+
+    return a + b;
+}
+
+// Спецификатор экспорта делает функцию внешне видимой в сгенерированном
+// объектном файле и заставляет ее использовать C ABI.
+export fn sub(a: i8, b: i8) i8 {
+    return a - b;
+}
+
+// Спецификатор extern используется для объявления функции, которая будет разрешена
+// во время линковки при статической связывании или во время выполнения при динамическом связывании.
+// Идентификатор заключенный в кавычки после ключевого слова extern указывает
+// библиотеку в которой есть функция. (например, "c" -> libc.so)
+// Спецификатор callconv изменяет соглашение о вызове функции.
+const WINAPI: std.builtin.CallingConvention = if (native_arch == .x86) .Stdcall else .C;
+extern "kernel32" fn ExitProcess(exit_code: u32) callconv(WINAPI) noreturn;
+extern "c" fn atan2(a: f64, b: f64) f64;
+
+// Встроенная функция @setCold сообщает оптимизатору, что функция вызывается редко.
+fn abort() noreturn {
+    @setCold(true);
+    while (true) {}
+}
+
+// Из-за соглашения о голом вызове функция не имеет ни пролога, ни эпилога.
+// Это может быть полезно при интеграции с assembly.
+fn _start() callconv(.Naked) noreturn {
+    abort();
+}
+
+// Соглашение о встроенном вызове требует, чтобы функция была встроена во все места вызова.
+// Если функция не может быть встроена, это ошибка времени компиляции.
+inline fn shiftLeftOne(a: u32) u32 {
+    return a << 1;
+}
+
+// Спецификатор pub позволяет отображать функцию при импорте.
+// В другом файле можно использовать @import и вызвать sub2
+pub fn sub2(a: i8, b: i8) i8 {
+    return a - b;
+}
+
+// Указатели на функции имеют префикс `*const `.
+const Call2Op = *const fn (a: i8, b: i8) i8;
+fn doOp(fnCall: Call2Op, op1: i8, op2: i8) i8 {
+    return fnCall(op1, op2);
+}
+
+test "function" {
+    try expect(doOp(add, 5, 6) == 11);
+    try expect(doOp(sub2, 5, 6) == -1);
+}
+```
+```bash
+$ zig test test_functions.zig
+1/1 test_functions.test.function...OK
+All 1 tests passed.
+```
+
+Существует разница между телом функции и указателем на функцию. Тела функций - это типы, доступные только во время
+comptime, в то время как указатели на функции могут быть известны во время выполнения.
+
+#### Pass-by-value Parameters
+
+Примитивные типы, такие как целые числа и числа с плавающей запятой передаваемые в качестве параметров копируются, а
+затем копия будет доступна в теле функции. Это называется "передачей по значению". Копирование примитивного типа по сути
+является бесплатным и обычно не требует ничего, кроме установки регистра.
+
+Структуры, объединения и массивы иногда могут быть более эффективно переданы в качестве ссылки, поскольку копия может
+быть сколь угодно дорогой в зависимости от размера. Когда эти типы передаются в качестве параметров, **Zig** может выбрать
+копирование и передачу по значению или по ссылке в зависимости от того, какой способ, по мнению **Zig** будет быстрее.
+Отчасти это стало возможным благодаря тому, что параметры неизменяемы.
+
+```zig
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn foo(point: Point) i32 {
+    // Здесь "точка" может быть ссылкой или копией. Тело функции
+    // может игнорировать разницу и рассматривать ее как значение. Будьте очень осторожны
+    // принимая адрес параметра - он должен обрабатываться так, как если бы
+    // адрес станет недействительным при возврате функции.
+    return point.x + point.y;
+}
+
+const expect = @import("std").testing.expect;
+
+test "pass struct to function" {
+    try expect(foo(Point{ .x = 1, .y = 2 }) == 3);
+}
+```
+```bash
+$ zig test test_pass_by_reference_or_value.zig
+1/1 test_pass_by_reference_or_value.test.pass struct to function...OK
+All 1 tests passed.
+```
+
+Для внешних функций **Zig** следует C ABI для передачи структур и объединений по значению.
+
+#### Function Parameter Type Inference
+
+Параметры функции могут быть объявлены с использованием `anytype` вместо type. В этом случае типы параметров будут
+определены при вызове функции. Используйте @TypeOf и @TypeInfo для получения информации о предполагаемом типе.
+
+```zig
+const expect = @import("std").testing.expect;
+
+fn addFortyTwo(x: anytype) @TypeOf(x) {
+    return x + 42;
+}
+
+test "fn type inference" {
+    try expect(addFortyTwo(1) == 43);
+    try expect(@TypeOf(addFortyTwo(1)) == comptime_int);
+    const y: i64 = 2;
+    try expect(addFortyTwo(y) == 44);
+    try expect(@TypeOf(addFortyTwo(y)) == i64);
+}
+```
+```bash
+$ zig test test_fn_type_inference.zig
+1/1 test_fn_type_inference.test.fn type inference...OK
+All 1 tests passed.
+```
+
+#### inline fn
+
+Добавление ключевого слова `inline` к определению функции приводит к тому, что функция становится семантически
+встроенной в место вызова. Это не является намеком на то, что это может быть замечено при выполнении этапов оптимизации,
+но влияет на типы и значения, задействованные в вызове функции.
+
+В отличие от обычных вызовов функций, аргументы в месте вызова встроенной функции, известные во время компиляции,
+обрабатываются как параметры времени компиляции. Это потенциально может распространяться на все возвращаемое значение:
+
+```zig
+test "inline function call" {
+    if (foo(1200, 34) != 1234) {
+        @compileError("bad");
+    }
+}
+
+inline fn foo(a: i32, b: i32) i32 {
+    return a + b;
+}
+```
+```bash
+$ zig test inline_call.zig
+1/1 inline_call.test.inline function call...OK
+All 1 tests passed.
+```
+
+Если функция `inline` удалена, тест завершается с ошибкой компиляции, а не с передачей.
+
+Обычно лучше позволить компилятору решать, когда встраивать функцию, за исключением этих сценариев:
+- Для изменения количества стековых фреймов в стеке вызовов в целях отладки.
+- Чтобы время выполнения аргументов передавалось на возвращаемое значение функции, как в приведенном выше примере.
+- Этого требуют измерения производительности в реальном мире.
+
+Обратите внимание, что `inline` фактически ограничивает возможности компилятора. Это может негативно сказаться на
+размере двоичного файла, скорости компиляции и даже производительности во время выполнения.
+
+#### Function Reflection
+
+```zig
+const std = @import("std");
+const math = std.math;
+const testing = std.testing;
+
+test "fn reflection" {
+    try testing.expect(@typeInfo(@TypeOf(testing.expect)).Fn.params[0].type.? == bool);
+    try testing.expect(@typeInfo(@TypeOf(testing.tmpDir)).Fn.return_type.? == testing.TmpDir);
+
+    try testing.expect(@typeInfo(@TypeOf(math.Log2Int)).Fn.is_generic);
+}
+```
+```bash
+$ zig test test_fn_reflection.zig
+1/1 test_fn_reflection.test.fn reflection...OK
+All 1 tests passed.
+```
 ------------
