@@ -4764,4 +4764,944 @@ $ zig test test_fn_reflection.zig
 1/1 test_fn_reflection.test.fn reflection...OK
 All 1 tests passed.
 ```
+
+------------
+### Errors
+
+#### Error Set Type
+
+Набор ошибок похож на перечисление. Однако каждому имени ошибки во всей компиляции присваивается целое число без знака,
+большее 0. Вам разрешено объявлять одно и то же имя ошибки более одного раза, и если вы это сделаете ему будет
+присвоено одно и то же целочисленное значение.
+
+Тип набора ошибок по умолчанию равен `u16`, хотя, если максимальное количество различных значений ошибок указано с помощью
+параметра командной строки --error-limit [num], будет использоваться целочисленный тип с минимальным количеством битов
+необходимым для представления всех значений ошибок.
+
+Вы можете перенести ошибку из подмножества в надмножество:
+```zig
+const std = @import("std");
+
+const FileOpenError = error{
+    AccessDenied,
+    OutOfMemory,
+    FileNotFound,
+};
+
+const AllocationError = error{
+    OutOfMemory,
+};
+
+test "coerce subset to superset" {
+    const err = foo(AllocationError.OutOfMemory);
+    try std.testing.expect(err == FileOpenError.OutOfMemory);
+}
+
+fn foo(err: AllocationError) FileOpenError {
+    return err;
+}
+```
+```bash
+$ zig test test_coerce_error_subset_to_superset.zig
+1/1 test_coerce_error_subset_to_superset.test.coerce subset to superset...OK
+All 1 tests passed.
+```
+
+Но вы не можете перенести ошибку из надмножества в подмножество:
+
+```zig
+const FileOpenError = error{
+    AccessDenied,
+    OutOfMemory,
+    FileNotFound,
+};
+
+const AllocationError = error{
+    OutOfMemory,
+};
+
+test "coerce superset to subset" {
+    foo(FileOpenError.OutOfMemory) catch {};
+}
+
+fn foo(err: FileOpenError) AllocationError {
+    return err;
+}
+```
+```bash
+
+$ zig test test_coerce_error_superset_to_subset.zig
+doc/langref/test_coerce_error_superset_to_subset.zig:16:12: error: expected type 'error{OutOfMemory}', found 'error{AccessDenied,OutOfMemory,FileNotFound}'
+    return err;
+           ^~~
+doc/langref/test_coerce_error_superset_to_subset.zig:16:12: note: 'error.AccessDenied' not a member of destination error set
+doc/langref/test_coerce_error_superset_to_subset.zig:16:12: note: 'error.FileNotFound' not a member of destination error set
+doc/langref/test_coerce_error_superset_to_subset.zig:15:28: note: function return type declared here
+fn foo(err: FileOpenError) AllocationError {
+                           ^~~~~~~~~~~~~~~
+referenced by:
+    test.coerce superset to subset: doc/langref/test_coerce_error_superset_to_subset.zig:12:5
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+
+```
+
+Существует ярлык для объявления набора ошибок содержащего только 1 значение и последующего получения этого значения:
+```zig
+const err = error.FileNotFound;
+```
+Это эквивалентно:
+```zig
+const err = (error{FileNotFound}).FileNotFound;
+```
+
+Это становится полезным при использовании предполагаемых наборов ошибок.
+
+#### The Global Error Set
+
+`anyerror` относится к глобальному набору ошибок. Это набор ошибок, который содержит все ошибки во всем модуле
+компиляции. Это надмножество всех других наборов ошибок и не является подмножеством ни одного из них.
+
+Вы можете присвоить любому набору ошибок значение global, и вы можете явно преобразовать ошибку из глобального набора
+ошибок в не глобальную. При этом вставляется утверждение на уровне языка чтобы убедиться, что значение ошибки
+действительно находится в целевом наборе ошибок.
+
+Как правило, следует избегать глобального набора ошибок, поскольку он не позволяет компилятору узнать какие ошибки
+возможны во время компиляции. Знание набора ошибок во время компиляции лучше для создания документации и полезных
+сообщений об ошибках таких как забывание значения возможной ошибки в `switch`.
+
+#### Error Union Type
+
+Тип набора ошибок и обычный тип могут быть объединены с помощью бинарного оператора `!` Для формирования типа
+объединения ошибок. Скорее всего, вы будете чаще использовать тип объединения ошибок чем тип набора ошибок сам по себе.
+
+Вот функция для преобразования строки в 64-разрядное целое число:
+
+```zig
+const std = @import("std");
+const maxInt = std.math.maxInt;
+
+pub fn parseU64(buf: []const u8, radix: u8) !u64 {
+    var x: u64 = 0;
+
+    for (buf) |c| {
+        const digit = charToDigit(c);
+
+        if (digit >= radix) {
+            return error.InvalidChar;
+        }
+
+        // x *= radix
+        var ov = @mulWithOverflow(x, radix);
+        if (ov[1] != 0) return error.OverFlow;
+
+        // x += digit
+        ov = @addWithOverflow(ov[0], digit);
+        if (ov[1] != 0) return error.OverFlow;
+        x = ov[0];
+    }
+
+    return x;
+}
+
+fn charToDigit(c: u8) u8 {
+    return switch (c) {
+        '0'...'9' => c - '0',
+        'A'...'Z' => c - 'A' + 10,
+        'a'...'z' => c - 'a' + 10,
+        else => maxInt(u8),
+    };
+}
+
+test "parse u64" {
+    const result = try parseU64("1234", 10);
+    try std.testing.expect(result == 1234);
+}
+```
+```bash
+$ zig test error_union_parsing_u64.zig
+1/1 error_union_parsing_u64.test.parse u64...OK
+All 1 tests passed.
+```
+
+Обратите внимание, что тип возвращаемого значения - `!u64`. Это означает, что функция возвращает либо 64-разрядное целое
+число без знака либо ошибку. Мы не указали значение ошибки слева от `!` поэтому выводится значение ошибки.
+
+В определении функции вы можете увидеть несколько инструкций `return`, которые возвращают ошибку, а внизу - инструкцию
+`return`, которая возвращает `u64`. Оба типа приводят к любой `error!u64`.
+
+Как выглядит использование этой функции, зависит от того, что вы пытаетесь сделать.
+Одно из следующих действий:
+- Вы хотите указать значение по умолчанию если оно вернуло ошибку.
+- Если оно вернуло ошибку вы хотите вернуть ту же ошибку.
+- Вы знаете с полной уверенностью, что оно не вернет ошибку, поэтому хотите безоговорочно отменить ее.
+- Вы хотите предпринять различные действия для каждой возможной ошибки.
+
+##### catch
+
+Если вы хотите указать значение по умолчанию, вы можете использовать двоичный оператор `catch`:
+
+```zig
+const parseU64 = @import("error_union_parsing_u64.zig").parseU64;
+
+fn doAThing(str: []u8) void {
+    const number = parseU64(str, 10) catch 13;
+    _ = number; // ...
+}
+```
+
+В этом коде `number` будет равно успешно обработанной строке или значение по умолчанию равно 13. Тип правой части
+бинарного оператора `catch` должен соответствовать типу unwrapped error union или быть типа `noreturn`.
+
+Если вы хотите предоставить значение по умолчанию с помощью `catch` после выполнения некоторой логики, вы можете
+объединить `catch` с именованными блоками:
+
+```zig
+const parseU64 = @import("error_union_parsing_u64.zig").parseU64;
+
+fn doAThing(str: []u8) void {
+    const number = parseU64(str, 10) catch blk: {
+        // делать что-то
+        break :blk 13;
+    };
+    _ = number; // теперь number инициализирован
+}
+```
+
+
+##### try
+
+Допустим, вы хотели вернуть ошибку если она у вас появилась, в противном случае продолжайте использовать логику
+функции:
+
+```zig
+const parseU64 = @import("error_union_parsing_u64.zig").parseU64;
+
+fn doAThing(str: []u8) !void {
+    const number = parseU64(str, 10) catch |err| return err;
+    _ = number; // ...
+}
+```
+
+Для этого есть короткий путь. Выражение `try`:
+
+```zig
+const parseU64 = @import("error_union_parsing_u64.zig").parseU64;
+
+fn doAThing(str: []u8) !void {
+    const number = try parseU64(str, 10);
+    _ = number; // ...
+}
+```
+`try` вычисляет выражение объединения с ошибкой. Если это ошибка то текущая функция возвращает результат с той же
+ошибкой. В противном случае результатом выражения будет развернутое значение.
+
+Возможно, вы с полной уверенностью знаете, что выражение никогда не будет ошибкой. В этом случае вы можете сделать это:
+
+```zig
+const number = parseU64("1234", 10) catch unreachable;
+```
+
+Здесь мы точно знаем, что "1234" будет успешно обработано. Поэтому мы помещаем значение `unreachable` в правую часть.
+`unreachable` вызывает панику в режимах Debug и ReleaseSafe и неопределенное поведение в режимах ReleaseFast и
+ReleaseSmall. Итак, во время отладки приложения если бы произошла непредвиденная ошибка, приложение завершило бы работу
+соответствующим образом.
+
+Возможно, вы захотите выполнить разные действия в каждой ситуации. Для этого мы объединяем выражения `if` и `switch`:
+
+```zig
+fn doAThing(str: []u8) void {
+    if (parseU64(str, 10)) |number| {
+        doSomethingWithNumber(number);
+    } else |err| switch (err) {
+        error.Overflow => {
+            // обработать переполнение...
+        },
+        // мы обещаем, что InvalidChar не произойдет (или произойдет сбой в режиме отладки, если это произойдет)
+        error.InvalidChar => unreachable,
+    }
+}
+```
+
+Наконец, возможно вам захочется обработать только некоторые ошибки. Для этого вы можете отобразить необработанные
+ошибки в случае `else`, который теперь содержит более узкий набор ошибок:
+
+```zig
+fn doAnotherThing(str: []u8) error{InvalidChar}!void {
+    if (parseU64(str, 10)) |number| {
+        doSomethingWithNumber(number);
+    } else |err| switch (err) {
+        error.Overflow => {
+            // обработать переполнение...
+        },
+        else => |leftover_err| return leftover_err,
+    }
+}
+```
+
+Вы должны использовать синтаксис захвата переменной. Если переменная вам не нужна, вы можете захватить ее с помощью `_`
+и избежать `switch`.
+
+```zig
+fn doADifferentThing(str: []u8) void {
+    if (parseU64(str, 10)) |number| {
+        doSomethingWithNumber(number);
+    } else |_| {
+        // делай, как тебе хочется
+    }
+}
+```
+
+##### errdefer
+
+Другим компонентом обработки ошибок являются инструкции `defer`. В дополнение к безусловному `defer`, в **Zig** есть
+`errdefer`, который вычисляет отложенное выражение на пути выхода из блока тогда и только тогда, когда функция
+возвращает сообщение об ошибке из блока.
+
+Пример:
+```zig
+fn createFoo(param: i32) !Foo {
+    const foo = try tryToAllocateFoo();
+    // теперь мы выделили foo, нам нужно освободить его если функция завершится ошибкой.
+    // но мы хотим вернуть его, если функция завершится успешно.
+    errdefer deallocateFoo(foo);
+
+    const tmp_buf = allocateTmpBuffer() orelse return error.OutOfMemory;
+    // tmp_buf - это действительно временный ресурс, и мы, безусловно, хотим его очистить
+    // до того, как этот блок покинет область видимости
+    defer deallocateTmpBuffer(tmp_buf);
+
+    if (param > 1337) return error.InvalidParam;
+
+    // здесь функция errdefer не будет запущена, так как мы возвращаем результат успешной работы функции.
+    // но функция defer будет запущена!
+    return foo;
+}
+```
+
+Самое приятное в этом то, что вы получаете надежную обработку ошибок без многословия и когнитивных затрат, связанных с
+попытками убедиться, что пройден каждый путь к выходу. Код освобождения всегда следует непосредственно за кодом
+выделения.
+
+##### Common errdefer Slip-Ups
+
+Следует отметить, что операторы `errdefer` действуют только до конца блока в котором они записаны и следовательно не
+выполняются если ошибка возвращается за пределами этого блока:
+
+```zig
+onst std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const Foo = struct {
+    data: u32,
+};
+
+fn tryToAllocateFoo(allocator: Allocator) !*Foo {
+    return allocator.create(Foo);
+}
+
+fn deallocateFoo(allocator: Allocator, foo: *Foo) void {
+    allocator.destroy(foo);
+}
+
+fn getFooData() !u32 {
+    return 666;
+}
+
+fn createFoo(allocator: Allocator, param: i32) !*Foo {
+    const foo = getFoo: {
+        var foo = try tryToAllocateFoo(allocator);
+        errdefer deallocateFoo(allocator, foo); // Действует только до конца getFoo
+
+        // Вызывает deallocateFoo при ошибке
+        foo.data = try getFooData();
+
+        break :getFoo foo;
+    };
+
+    // Выходит за рамки определения ошибки, поэтому
+    // deallocateFoo здесь вызываться не будет
+    if (param > 1337) return error.InvalidParam;
+
+    return foo;
+}
+
+test "createFoo" {
+    try std.testing.expectError(error.InvalidParam, createFoo(std.testing.allocator, 2468));
+}
+```
+```bash
+$ zig test test_errdefer_slip_ups.zig
+1/1 test_errdefer_slip_ups.test.createFoo...OK
+[gpa] (err): memory address 0x7f11f521a000 leaked:
+/home/andy/src/zig/doc/langref/test_errdefer_slip_ups.zig:9:28: 0x103d3cf in tryToAllocateFoo (test)
+    return allocator.create(Foo);
+                           ^
+/home/andy/src/zig/doc/langref/test_errdefer_slip_ups.zig:22:39: 0x103d5e5 in createFoo (test)
+        var foo = try tryToAllocateFoo(allocator);
+                                      ^
+/home/andy/src/zig/doc/langref/test_errdefer_slip_ups.zig:39:62: 0x103d82d in test.createFoo (test)
+    try std.testing.expectError(error.InvalidParam, createFoo(std.testing.allocator, 2468));
+                                                             ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104d2a0 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x104340b in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103f9f9 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103f561 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+
+All 1 tests passed.
+1 errors were logged.
+1 tests leaked memory.
+error: the following test command failed with exit code 1:
+/home/andy/src/zig/.zig-cache/o/58c079cb550addefaa354f72d736afd7/test
+```
+
+Чтобы гарантировать, что `deallocateFoo` правильно вызывается при возврате ошибки, вы должны добавить `errdefer` вне
+блока:
+
+```zig
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const Foo = struct {
+    data: u32,
+};
+
+fn tryToAllocateFoo(allocator: Allocator) !*Foo {
+    return allocator.create(Foo);
+}
+
+fn deallocateFoo(allocator: Allocator, foo: *Foo) void {
+    allocator.destroy(foo);
+}
+
+fn getFooData() !u32 {
+    return 666;
+}
+
+fn createFoo(allocator: Allocator, param: i32) !*Foo {
+    const foo = getFoo: {
+        var foo = try tryToAllocateFoo(allocator);
+        errdefer deallocateFoo(allocator, foo);
+
+        foo.data = try getFooData();
+
+        break :getFoo foo;
+    };
+    // Это продолжается до конца выполнения функции
+    errdefer deallocateFoo(allocator, foo);
+
+    // Ошибка теперь корректно обрабатывается errdefer
+    if (param > 1337) return error.InvalidParam;
+
+    return foo;
+}
+
+test "createFoo" {
+    try std.testing.expectError(error.InvalidParam, createFoo(std.testing.allocator, 2468));
+}
+```
+```bash
+$ zig test test_errdefer_block.zig
+1/1 test_errdefer_block.test.createFoo...OK
+All 1 tests passed.
+```
+
+Тот факт, что определения ошибок сохраняются только для того блока, в котором они объявлены, особенно важен при
+использовании циклов:
+
+```zig
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const Foo = struct { data: *u32 };
+
+fn getData() !u32 {
+    return 666;
+}
+
+fn genFoos(allocator: Allocator, num: usize) ![]Foo {
+    const foos = try allocator.alloc(Foo, num);
+    errdefer allocator.free(foos);
+
+    for (foos, 0..) |*foo, i| {
+        foo.data = try allocator.create(u32);
+        // Эта ошибка не сохраняется между итерациями
+        errdefer allocator.destroy(foo.data);
+
+        // Данные за первые 3 месяца будут утечены
+        if (i >= 3) return error.TooManyFoos;
+
+        foo.data.* = try getData();
+    }
+
+    return foos;
+}
+
+test "genFoos" {
+    try std.testing.expectError(error.TooManyFoos, genFoos(std.testing.allocator, 5));
+}
+```
+```bash
+$ zig test test_errdefer_loop_leak.zig
+1/1 test_errdefer_loop_leak.test.genFoos...OK
+[gpa] (err): memory address 0x7f57c7578000 leaked:
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:15:40: 0x103d7a6 in genFoos (test)
+        foo.data = try allocator.create(u32);
+                                       ^
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:29:59: 0x103e0dd in test.genFoos (test)
+    try std.testing.expectError(error.TooManyFoos, genFoos(std.testing.allocator, 5));
+                                                          ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104e010 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x1043eab in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x10402a9 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103fe11 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+
+[gpa] (err): memory address 0x7f57c7578004 leaked:
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:15:40: 0x103d7a6 in genFoos (test)
+        foo.data = try allocator.create(u32);
+                                       ^
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:29:59: 0x103e0dd in test.genFoos (test)
+    try std.testing.expectError(error.TooManyFoos, genFoos(std.testing.allocator, 5));
+                                                          ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104e010 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x1043eab in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x10402a9 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103fe11 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+
+[gpa] (err): memory address 0x7f57c7578008 leaked:
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:15:40: 0x103d7a6 in genFoos (test)
+        foo.data = try allocator.create(u32);
+                                       ^
+/home/andy/src/zig/doc/langref/test_errdefer_loop_leak.zig:29:59: 0x103e0dd in test.genFoos (test)
+    try std.testing.expectError(error.TooManyFoos, genFoos(std.testing.allocator, 5));
+                                                          ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x104e010 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x1043eab in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x10402a9 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103fe11 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+
+All 1 tests passed.
+3 errors were logged.
+1 tests leaked memory.
+error: the following test command failed with exit code 1:
+/home/andy/src/zig/.zig-cache/o/29fcda275b7c426418534b679850fa2e/test
+```
+
+С кодом, который выделяет данные в цикле необходимо соблюдать особую осторожность, чтобы убедиться в отсутствии утечки
+памяти при возврате ошибки:
+
+```zig
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const Foo = struct { data: *u32 };
+
+fn getData() !u32 {
+    return 666;
+}
+
+fn genFoos(allocator: Allocator, num: usize) ![]Foo {
+    const foos = try allocator.alloc(Foo, num);
+    errdefer allocator.free(foos);
+
+    // Используется для отслеживания того, сколько foo было инициализировано
+    // (включая распределение их данных)
+    var num_allocated: usize = 0;
+    errdefer for (foos[0..num_allocated]) |foo| {
+        allocator.destroy(foo.data);
+    };
+    for (foos, 0..) |*foo, i| {
+        foo.data = try allocator.create(u32);
+        num_allocated += 1;
+
+        if (i >= 3) return error.TooManyFoos;
+
+        foo.data.* = try getData();
+    }
+
+    return foos;
+}
+
+test "genFoos" {
+    try std.testing.expectError(error.TooManyFoos, genFoos(std.testing.allocator, 5));
+}
+```
+```bash
+$ zig test test_errdefer_loop.zig
+1/1 test_errdefer_loop.test.genFoos...OK
+All 1 tests passed.
+```
+
+Еще пара лакомых кусочков об обработке ошибок:
+- Эти примитивы обеспечивают достаточную выразительность, так что вполне практично если ошибка проверки на наличие
+ошибки является ошибкой компиляции. Если вы действительно хотите проигнорировать ошибку, вы можете добавить `catch`
+`unreachable` и получить дополнительное преимущество от сбоя в режимах Debug и ReleaseSafe, если ваше предположение было
+неверным.
+- Поскольку **Zig** понимает типы ошибок, он может предварительно взвесить ветви в пользу того, что ошибки не возникают.
+Просто небольшое преимущество в оптимизации, недоступное на других языках.
+
+Объединение с ошибкой создается с помощью бинарного оператора `!`. Вы можете использовать отражение во время компиляции
+для доступа к дочернему типу объединения с ошибкой:
+
+```zig
+const expect = @import("std").testing.expect;
+
+test "error union" {
+    var foo: anyerror!i32 = undefined;
+
+    // Извлекать из дочернего типа объединения ошибок:
+    foo = 1234;
+
+    // Извлекать из набора ошибок:
+    foo = error.SomeError;
+
+    // Используйте рефлексию во время компиляции для доступа к типу полезной нагрузки объединения ошибок:
+    try comptime expect(@typeInfo(@TypeOf(foo)).ErrorUnion.payload == i32);
+
+    // Используйте рефлексию во время компиляции для доступа к типу набора ошибок объединения ошибок:
+    try comptime expect(@typeInfo(@TypeOf(foo)).ErrorUnion.error_set == anyerror);
+}
+```
+```bash
+$ zig test test_error_union.zig
+1/1 test_error_union.test.error union...OK
+All 1 tests passed.
+```
+
+##### Merging Error Sets
+
+Используйте оператор `||` чтобы объединить два набора ошибок. Результирующий набор ошибок содержит ошибки из обоих
+наборов ошибок. Комментарии к документам в левой части переопределяют комментарии к документам в правой части. В этом
+примере комментарии doc для `C.PathNotFound` - это комментарий `doc`.
+
+Это особенно полезно для функций, которые возвращают разные наборы ошибок в зависимости от ветвей comptime. Например,
+стандартная библиотека **Zig** использует `LinuxFileOpenError || WindowsFileOpenError` для набора ошибок при открытии
+файлов.
+
+```zig
+const A = error{
+    NotDir,
+
+    /// A комментарий к документу
+    PathNotFound,
+};
+const B = error{
+    OutOfMemory,
+
+    /// B комментарий к документу
+    PathNotFound,
+};
+
+const C = A || B;
+
+fn foo() C!void {
+    return error.NotDir;
+}
+
+test "merge error sets" {
+    if (foo()) {
+        @panic("unexpected");
+    } else |err| switch (err) {
+        error.OutOfMemory => @panic("unexpected"),
+        error.PathNotFound => @panic("unexpected"),
+        error.NotDir => {},
+    }
+}
+```
+```bash
+$ zig test test_merging_error_sets.zig
+1/1 test_merging_error_sets.test.merge error sets...OK
+All 1 tests passed.
+```
+
+##### Inferred Error Sets
+
+Поскольку многие функции в **Zig** возвращают возможную ошибку, **Zig** поддерживает вывод набора ошибок. Чтобы вывести набор
+ошибок для функции, добавьте оператор `!` к типу возвращаемого значения функции, например `!T`:
+
+```zig
+// С установленным выводом об ошибке
+pub fn add_inferred(comptime T: type, a: T, b: T) !T {
+    const ov = @addWithOverflow(a, b);
+    if (ov[1] != 0) return error.Overflow;
+    return ov[0];
+}
+
+// С явно заданной ошибкой
+pub fn add_explicit(comptime T: type, a: T, b: T) Error!T {
+    const ov = @addWithOverflow(a, b);
+    if (ov[1] != 0) return error.Overflow;
+    return ov[0];
+}
+
+const Error = error{
+    Overflow,
+};
+
+const std = @import("std");
+
+test "inferred error set" {
+    if (add_inferred(u8, 255, 1)) |_| unreachable else |err| switch (err) {
+        error.Overflow => {}, // ok
+    }
+}
+```
+```bash
+$ zig test test_inferred_error_sets.zig
+1/1 test_inferred_error_sets.test.inferred error set...OK
+All 1 tests passed.
+```
+
+Когда функция содержит набор выводимых ошибок, эта функция становится универсальной и следовательно, с ней становится
+сложнее выполнять определенные действия, такие как получение указателя на функцию или создание набора ошибок который
+был бы согласован для разных целей сборки. Кроме того, выводимые наборы ошибок несовместимы с рекурсией.
+
+В таких ситуациях рекомендуется использовать явный набор ошибок. Как правило, вы можете начать с пустого набора ошибок и
+позволить ошибкам компиляции направлять вас к завершению набора.
+
+Эти ограничения могут быть устранены в будущей версии **Zig**.
+
+#### Error Return Traces
+
+Трассировка возврата ошибок показывает все точки в коде, в которых вызывающая функция вернула ошибку. Это делает
+практичным использование try everywhere и позволяет по-прежнему знать, что произошло если ошибка в конечном итоге
+"вышла" из вашего приложения.
+
+```zig
+pub fn main() !void {
+    try foo(12);
+}
+
+fn foo(x: i32) !void {
+    if (x >= 5) {
+        try bar();
+    } else {
+        try bang2();
+    }
+}
+
+fn bar() !void {
+    if (baz()) {
+        try quux();
+    } else |err| switch (err) {
+        error.FileNotFound => try hello(),
+    }
+}
+
+fn baz() !void {
+    try bang1();
+}
+
+fn quux() !void {
+    try bang2();
+}
+
+fn hello() !void {
+    try bang2();
+}
+
+fn bang1() !void {
+    return error.FileNotFound;
+}
+
+fn bang2() !void {
+    return error.PermissionDenied;
+}
+```
+```bash
+$ zig build-exe error_return_trace.zig
+$ ./error_return_trace
+error: PermissionDenied
+/home/andy/src/zig/doc/langref/error_return_trace.zig:34:5: 0x1034e08 in bang1 (error_return_trace)
+    return error.FileNotFound;
+    ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:22:5: 0x1034f13 in baz (error_return_trace)
+    try bang1();
+    ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:38:5: 0x1034f38 in bang2 (error_return_trace)
+    return error.PermissionDenied;
+    ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:30:5: 0x1034fa3 in hello (error_return_trace)
+    try bang2();
+    ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:17:31: 0x103505a in bar (error_return_trace)
+        error.FileNotFound => try hello(),
+                              ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:7:9: 0x1035140 in foo (error_return_trace)
+        try bar();
+        ^
+/home/andy/src/zig/doc/langref/error_return_trace.zig:2:5: 0x1035198 in main (error_return_trace)
+    try foo(12);
+    ^
+```
+
+Посмотрите внимательно на этот пример. Это не трассировка стека.
+
+Вы можете видеть, что последняя ошибка, которая возникла, была `PermissionDenied`, но исходной ошибкой, из-за которой все
+это началось, был `FileNotFound`. В функции `bar` код обрабатывает исходный код ошибки, а затем возвращает другой, из
+инструкции `switch`. Трассировка возврата ошибки делает это понятным, в то время как трассировка стека выглядела бы
+следующим образом:
+
+```zig
+pub fn main() void {
+    foo(12);
+}
+
+fn foo(x: i32) void {
+    if (x >= 5) {
+        bar();
+    } else {
+        bang2();
+    }
+}
+
+fn bar() void {
+    if (baz()) {
+        quux();
+    } else {
+        hello();
+    }
+}
+
+fn baz() bool {
+    return bang1();
+}
+
+fn quux() void {
+    bang2();
+}
+
+fn hello() void {
+    bang2();
+}
+
+fn bang1() bool {
+    return false;
+}
+
+fn bang2() void {
+    @panic("PermissionDenied");
+}
+```
+```bash
+$ zig build-exe stack_trace.zig
+$ ./stack_trace
+thread 3570764 panic: PermissionDenied
+/home/andy/src/zig/doc/langref/stack_trace.zig:38:5: 0x1039320 in bang2 (stack_trace)
+    @panic("PermissionDenied");
+    ^
+/home/andy/src/zig/doc/langref/stack_trace.zig:30:10: 0x1068bd8 in hello (stack_trace)
+    bang2();
+         ^
+/home/andy/src/zig/doc/langref/stack_trace.zig:17:14: 0x10392fc in bar (stack_trace)
+        hello();
+             ^
+/home/andy/src/zig/doc/langref/stack_trace.zig:7:12: 0x103721c in foo (stack_trace)
+        bar();
+           ^
+/home/andy/src/zig/doc/langref/stack_trace.zig:2:8: 0x103519d in main (stack_trace)
+    foo(12);
+       ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034a49 in posixCallMainAndExit (stack_trace)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10345b1 in _start (stack_trace)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Здесь трассировка стека не объясняет, как поток управления в `bar` дошел до вызова функции `hello()`. Чтобы выяснить
+это нужно было бы открыть отладчик или дополнительно протестировать приложение. С другой стороны, трассировка возврата
+ошибки показывает как именно возникла ошибка.
+
+Эта функция отладки упрощает быструю итерацию кода который надежно обрабатывает все условия ошибки. Это означает, что
+разработчикам **Zig**, естественно придется писать корректный, надежный код чтобы ускорить процесс разработки.
+
+Трассировка возвращаемых ошибок включена по-умолчанию в сборках Debug и ReleaseSafe и отключена по умолчанию в сборках
+ReleaseFast и сборках ReleaseSmall.
+
+Существует несколько способов активировать эту функцию отслеживания возврата ошибок:
+- Возвращает ошибку из main
+- Ошибка попадает в `catch` `unreachable`, и вы не переопределили обработчик аварийных сообщений по умолчанию
+- Используйте errorReturnTrace для доступа к текущей возвращаемой трассировке. Вы можете использовать
+`std.debug.dumpStackTrace`, чтобы распечатать его. Эта функция возвращает значение `null`, известное по времени
+компиляции, при сборке без поддержки трассировки возврата ошибок.
+
+##### Implementation Details
+
+Чтобы проанализировать затраты на производительность, рассмотрим два случая:
+- когда ошибки не возвращаются
+- при возврате ошибок
+
+В случае когда ошибки не возвращаются стоимость составляет одну операцию записи в память, только в первой функции с
+отказоустойчивостью в графе вызовов, которая вызывает функцию с отказоустойчивостью, т.е, когда функция возвращающая
+значение `void` вызывает функцию возвращающую ошибку. Это делается для инициализации этой структуры в стековой памяти:
+
+```zig
+pub const StackTrace = struct {
+    index: usize,
+    instruction_addresses: [N]usize,
+};
+```
+
+Здесь N - максимальная глубина вызова функции, определенная с помощью анализа графа вызовов. Рекурсия игнорируется и
+засчитывается за 2.
+
+Указатель на `StackTrace` передается в качестве секретного параметра каждой функции, которая может возвращать ошибку, но
+это всегда первый параметр, поэтому он, скорее всего, может находиться в регистре и оставаться там.
+
+Вот и все для пути когда ошибок не возникает. Это практически бесплатно с точки зрения производительности.
+
+При генерации кода для функции, возвращающей ошибку, непосредственно перед оператором `return` (только для операторов
+`return`, возвращающих ошибки) **Zig** генерирует вызов этой функции:
+
+```zig
+// помечен как "не встроенный" в LLVM IR
+fn __zig_return_error(stack_trace: *StackTrace) void {
+    stack_trace.instruction_addresses[stack_trace.index] = @returnAddress();
+    stack_trace.index = (stack_trace.index + 1) % N;
+}
+```
+
+Стоимость составляет 2 математические операции плюс некоторые операции чтения и записи в память. Объем памяти к которой
+осуществляется доступ ограничен и должен оставаться в кэше на время возврата ошибки.
+
+Что касается размера кода, то 1 вызов функции перед оператором `return` не представляет большой проблемы. Несмотря на
+это, у меня есть план сделать вызов `__zig_return_error` конечным вызовом, что фактически сведет стоимость размера кода
+к нулю. То, что является оператором `return` в коде без отслеживания возврата ошибки может стать инструкцией перехода в
+коде с отслеживанием возврата ошибки.
+
 ------------
