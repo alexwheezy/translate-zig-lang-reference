@@ -5863,4 +5863,584 @@ $ zig test test_optional_pointer.zig
 1/1 test_optional_pointer.test.optional pointers...OK
 All 1 tests passed.
 ```
+
+------------
+### Casting
+
+Приведение типа преобразует значение одного типа в другой. В **Zig** есть приведение типа для преобразований которые как
+известно абсолютно безопасны и однозначны и явное приведение для преобразований которые не хотелось бы чтобы произошли
+случайно. Существует также третий вид преобразования типов называемый разрешением одноранговых типов для случая когда
+тип результата должен быть определен с учетом нескольких типов операндов.
+
+#### Type Coercion
+
+Приведение типа происходит когда ожидается один тип, но предоставляется другой тип:
+```zig
+test "type coercion - variable declaration" {
+    const a: u8 = 1;
+    const b: u16 = a;
+    _ = b;
+}
+
+test "type coercion - function call" {
+    const a: u8 = 1;
+    foo(a);
+}
+
+fn foo(b: u16) void {
+    _ = b;
+}
+
+test "type coercion - @as builtin" {
+    const a: u8 = 1;
+    const b = @as(u16, a);
+    _ = b;
+}
+```
+```bash
+$ zig test test_type_coercion.zig
+1/3 test_type_coercion.test.type coercion - variable declaration...OK
+2/3 test_type_coercion.test.type coercion - function call...OK
+3/3 test_type_coercion.test.type coercion - @as builtin...OK
+All 3 tests passed.
+```
+
+Приведение к типу допустимо только в том случае, когда совершенно однозначно как перейти от одного типа к другому и
+гарантируется безопасность преобразования. Есть одно исключение - указатели на языке C.
+
+##### Type Coercion: Stricter Qualification
+
+Значения которые имеют одинаковое представление во время выполнения могут быть приведены для повышения строгости
+квалификаторов, независимо от того насколько они вложены:
+- `const` - разрешено преобразование от non-const к const
+- `volatile` - разрешено преобразование от энергонезависимого к энергозависимому
+- `align` - разрешено преобразование от большего к меньшему
+- `error` от наборов к надмножествам
+
+Эти приведения не выполняются во время выполнения, поскольку представление значений не изменяется.
+
+```zig
+test "type coercion - const qualification" {
+    var a: i32 = 1;
+    const b: *i32 = &a;
+    foo(b);
+}
+
+fn foo(_: *const i32) void {}
+```
+```bash
+$ zig test test_no_op_casts.zig
+1/1 test_no_op_casts.test.type coercion - const qualification...OK
+All 1 tests passed.
+```
+
+Кроме того, указатели принуждают к созданию необязательных указателей const:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const mem = std.mem;
+
+test "cast *[1][*]const u8 to [*]const ?[*]const u8" {
+    const window_name = [1][*]const u8{"window name"};
+    const x: [*]const ?[*]const u8 = &window_name;
+    try expect(mem.eql(u8, std.mem.sliceTo(@as([*:0]const u8, @ptrCast(x[0].?)), 0), "window name"));
+}
+```
+```bash
+$ zig test test_pointer_coerce_const_optional.zig
+1/1 test_pointer_coerce_const_optional.test.cast *[1][*]const u8 to [*]const ?[*]const u8...OK
+All 1 tests passed.
+```
+
+##### Type Coercion: Integer and Float Widening
+
+Целые числа приводят к целочисленным типам которые могут представлять каждое значение старого типа и аналогично
+значения с плавающей точкой приводят к типам с плавающей точкой которые могут представлять каждое значение старого
+типа.
+
+```zig
+const std = @import("std");
+const builtin = @import("builtin");
+const expect = std.testing.expect;
+const mem = std.mem;
+
+test "integer widening" {
+    const a: u8 = 250;
+    const b: u16 = a;
+    const c: u32 = b;
+    const d: u64 = c;
+    const e: u64 = d;
+    const f: u128 = e;
+    try expect(f == a);
+}
+
+test "implicit unsigned integer to signed integer" {
+    const a: u8 = 250;
+    const b: i16 = a;
+    try expect(b == 250);
+}
+
+test "float widening" {
+    const a: f16 = 12.34;
+    const b: f32 = a;
+    const c: f64 = b;
+    const d: f128 = c;
+    try expect(d == a);
+}
+```
+```bash
+$ zig test test_integer_widening.zig
+1/3 test_integer_widening.test.integer widening...OK
+2/3 test_integer_widening.test.implicit unsigned integer to signed integer...OK
+3/3 test_integer_widening.test.float widening...OK
+All 3 tests passed.
+```
+
+
+##### Type Coercion: Float to Int
+
+Ошибка компилятора уместна, поскольку это неоднозначное выражение оставляет компилятору два варианта приведения в
+действие.
+- Приведение значения 54.0 к `comptime_int` приводит к `@as(comptime_int, 10)`, которое преобразуется в `@as(f32, 10)`
+- Преобразуем 5 в `comptime_float`, в результате получаем `@as(comptime_float, 10.8)`, который преобразуется в `@as(f32, 10.8)`
+
+```zig
+// Приведение значения float во время компиляции к int
+test "implicit cast to comptime_int" {
+    const f: f32 = 54.0 / 5;
+    _ = f;
+}
+```
+```bash
+$ zig test test_ambiguous_coercion.zig
+doc/langref/test_ambiguous_coercion.zig:3:25: error: ambiguous coercion of division operands 'comptime_float' and 'comptime_int'; non-zero remainder '4'
+    const f: f32 = 54.0 / 5;
+                   ~~~~~^~~
+```
+
+##### Type Coercion: Slices, Arrays and Pointers
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+// Вы можете назначить константные указатели на массивы срезу с помощью модификатора
+// const в зависимости от типа элемента. Полезно, в частности, для
+// строковых литералов.
+test "*const [N]T to []const T" {
+    const x1: []const u8 = "hello";
+    const x2: []const u8 = &[5]u8{ 'h', 'e', 'l', 'l', 111 };
+    try expect(std.mem.eql(u8, x1, x2));
+
+    const y: []const f32 = &[2]f32{ 1.2, 3.4 };
+    try expect(y[0] == 1.2);
+}
+
+// Аналогично, это работает, когда типом назначения является объединение с ошибкой.
+test "*const [N]T to E![]const T" {
+    const x1: anyerror![]const u8 = "hello";
+    const x2: anyerror![]const u8 = &[5]u8{ 'h', 'e', 'l', 'l', 111 };
+    try expect(std.mem.eql(u8, try x1, try x2));
+
+    const y: anyerror![]const f32 = &[2]f32{ 1.2, 3.4 };
+    try expect((try y)[0] == 1.2);
+}
+
+// Аналогично, это работает, когда тип назначения является необязательным.
+test "*const [N]T to ?[]const T" {
+    const x1: ?[]const u8 = "hello";
+    const x2: ?[]const u8 = &[5]u8{ 'h', 'e', 'l', 'l', 111 };
+    try expect(std.mem.eql(u8, x1.?, x2.?));
+
+    const y: ?[]const f32 = &[2]f32{ 1.2, 3.4 };
+    try expect(y.?[0] == 1.2);
+}
+
+// При таком приведении длина массива становится длиной среза.
+test "*[N]T to []T" {
+    var buf: [5]u8 = "hello".*;
+    const x: []u8 = &buf;
+    try expect(std.mem.eql(u8, x, "hello"));
+
+    const buf2 = [2]f32{ 1.2, 3.4 };
+    const x2: []const f32 = &buf2;
+    try expect(std.mem.eql(f32, x2, &[2]f32{ 1.2, 3.4 }));
+}
+
+// Указатели на массивы состоящие из одного элемента могут быть преобразованы в указатели на множество элементов.
+test "*[N]T to [*]T" {
+    var buf: [5]u8 = "hello".*;
+    const x: [*]u8 = &buf;
+    try expect(x[4] == 'o');
+    // x[5] было бы неперехваченным разыменованием указателя за пределы допустимых значений!
+}
+
+// Аналогично, это работает, когда тип назначения является необязательным.
+test "*[N]T to ?[*]T" {
+    var buf: [5]u8 = "hello".*;
+    const x: ?[*]u8 = &buf;
+    try expect(x.?[4] == 'o');
+}
+
+// Одноэлементные указатели могут быть преобразованы в одноэлементные массивы len-1.
+test "*T to *[1]T" {
+    var x: i32 = 1234;
+    const y: *[1]i32 = &x;
+    const z: [*]i32 = y;
+    try expect(z[0] == 1234);
+}
+```
+```bash
+$ zig test test_coerce_slices_arrays_and_pointers.zig
+1/7 test_coerce_slices_arrays_and_pointers.test.*const [N]T to []const T...OK
+2/7 test_coerce_slices_arrays_and_pointers.test.*const [N]T to E![]const T...OK
+3/7 test_coerce_slices_arrays_and_pointers.test.*const [N]T to ?[]const T...OK
+4/7 test_coerce_slices_arrays_and_pointers.test.*[N]T to []T...OK
+5/7 test_coerce_slices_arrays_and_pointers.test.*[N]T to [*]T...OK
+6/7 test_coerce_slices_arrays_and_pointers.test.*[N]T to ?[*]T...OK
+7/7 test_coerce_slices_arrays_and_pointers.test.*T to *[1]T...OK
+All 7 tests passed.
+```
+
+##### Type Coercion: Optionals
+
+Тип полезной нагрузки Optionals, а также значение null приводят к необязательному типу.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "coerce to optionals" {
+    const x: ?i32 = 1234;
+    const y: ?i32 = null;
+
+    try expect(x.? == 1234);
+    try expect(y == null);
+}
+```
+```bash
+$ zig test test_coerce_optionals.zig
+1/1 test_coerce_optionals.test.coerce to optionals...OK
+All 1 tests passed.
+```
+
+Optionals также работают вложенными в тип объединения ошибок:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "coerce to optionals wrapped in error union" {
+    const x: anyerror!?i32 = 1234;
+    const y: anyerror!?i32 = null;
+
+    try expect((try x).? == 1234);
+    try expect((try y) == null);
+}
+```
+```bash
+$ zig test test_coerce_optional_wrapped_error_union.zig
+1/1 test_coerce_optional_wrapped_error_union.test.coerce to optionals wrapped in error union...OK
+All 1 tests passed.
+```
+
+##### Type Coercion: Error Unions
+
+Тип полезной нагрузки типа объединения ошибок, а также тип набора ошибок определяют тип объединения ошибок:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "coercion to error unions" {
+    const x: anyerror!i32 = 1234;
+    const y: anyerror!i32 = error.Failure;
+
+    try expect((try x) == 1234);
+    try std.testing.expectError(error.Failure, y);
+}
+```
+```bash
+$ zig test test_coerce_to_error_union.zig
+1/1 test_coerce_to_error_union.test.coercion to error unions...OK
+All 1 tests passed.
+```
+
+##### Type Coercion: Compile-Time Known Numbers
+
+Если известно, что число во время вычисления может быть представлено в целевом типе, оно может быть принудительно
+преобразовано:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "coercing large integer type to smaller one when value is comptime-known to fit" {
+    const x: u64 = 255;
+    const y: u8 = x;
+    try expect(y == 255);
+}
+```
+```bash
+$ zig test test_coerce_large_to_small.zig
+1/1 test_coerce_large_to_small.test.coercing large integer type to smaller one when value is comptime-known to fit...OK
+All 1 tests passed.
+```
+
+##### Type Coercion: Unions and Enums
+
+Tagged unions могут быть преобразованы в enums, а enums могут быть преобразованы в tagged unions если известно, что они
+являются полем union имеющим только одно возможное значение, например void:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const E = enum {
+    one,
+    two,
+    three,
+};
+
+const U = union(E) {
+    one: i32,
+    two: f32,
+    three,
+};
+
+const U2 = union(enum) {
+    a: void,
+    b: f32,
+
+    fn tag(self: U2) usize {
+        switch (self) {
+            .a => return 1,
+            .b => return 2,
+        }
+    }
+};
+
+test "coercion between unions and enums" {
+    const u = U{ .two = 12.34 };
+    const e: E = u; // приведение union к enum
+    try expect(e == E.two);
+
+    const three = E.three;
+    const u_2: U = three; // приведение enum к union
+    try expect(u_2 == E.three);
+
+    const u_3: U = .three; // приведение enum literal к union
+    try expect(u_3 == E.three);
+
+    const u_4: U2 = .a; // приведение enum literal к union с предпологаемым enum tag type.
+    try expect(u_4.tag() == 1);
+
+    // Следующий пример неверен.
+    // ошибка: приведение из enum '@TypeOf(.enum_literal)' к union 'test_coerce_unions_enum.U2' должен инициализировать поле 'b' 'f32'.
+    //var u_5: U2 = .b;
+    //try expect(u_5.tag() == 2);
+}
+```
+```bash
+$ zig test test_coerce_unions_enums.zig
+1/1 test_coerce_unions_enums.test.coercion between unions and enums...OK
+All 1 tests passed.
+```
+
+##### Type Coercion: undefined
+
+Значение `undefined` может быть приведено к любому типу.
+
+
+##### Type Coercion: Tuples to Arrays
+
+Кортежи могут быть преобразованы в массивы, если все поля имеют одинаковый тип.
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+const Tuple = struct { u8, u8 };
+test "coercion from homogenous tuple to array" {
+    const tuple: Tuple = .{ 5, 6 };
+    const array: [2]u8 = tuple;
+    _ = array;
+}
+```
+```bash
+$ zig test test_coerce_tuples_arrays.zig
+1/1 test_coerce_tuples_arrays.test.coercion from homogenous tuple to array...OK
+All 1 tests passed.
+```
+
+#### Explicit Casts
+
+Явные приведения выполняются с помощью встроенных функций. Некоторые явные приведения безопасны, некоторые - нет.
+Некоторые явные приведения выполняют утверждения на уровне языка, некоторые - нет. Некоторые явные приведения не
+выполняются во время выполнения, некоторые - нет.
+
+- `@bitCast` - изменить тип, но сохранить битовое представление
+- `@alignCast` - сделать указатель более выровненным
+- `@enumFromInt` - получить значение перечисления на основе его целочисленного тега.
+- `@errorFromInt` - получение кода ошибки на основе его целочисленного значения
+- `@errorCast` - преобразование в меньший набор ошибок
+- `@floatCast` - преобразование большего числа с плавающей точкой в меньшее число с плавающей точкой
+- `@floatFromInt` - преобразует целое число в значение с плавающей запятой
+- `@intCast` - преобразует значения между целыми типами
+- `@intFromBool` - преобразует значение true в 1, а значение false в 0
+- `@intFromEnum` - получение целочисленного значения тега перечисления или объединения с тегами
+- `@intFromError` - получение целочисленного значения кода ошибки
+- `@intFromFloat` - получение целой части значения с плавающей точкой
+- `@intFromPtr` - получение адреса указателя
+- `@ptrFromInt` - преобразование адреса в указатель
+- `@ptrCast` - преобразование между типами указателей
+- `@truncate` - преобразование между целыми типами, отсекая биты
+
+#### Peer Type Resolution
+
+Peer Type Resolution occurs in these places:
+
+- `switch` выражения
+- `if` выражения
+- `while` выражения
+- `for` выражения
+- Несколько операторов break в блоке
+- Некоторые бинарные операции
+
+При таком разрешении типов выбирается тип к которому могут быть привязаны все одноранговые типы. Вот несколько
+примеров:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const mem = std.mem;
+
+test "peer resolve int widening" {
+    const a: i8 = 12;
+    const b: i16 = 34;
+    const c = a + b;
+    try expect(c == 46);
+    try expect(@TypeOf(c) == i16);
+}
+
+test "peer resolve arrays of different size to const slice" {
+    try expect(mem.eql(u8, boolToStr(true), "true"));
+    try expect(mem.eql(u8, boolToStr(false), "false"));
+    try comptime expect(mem.eql(u8, boolToStr(true), "true"));
+    try comptime expect(mem.eql(u8, boolToStr(false), "false"));
+}
+fn boolToStr(b: bool) []const u8 {
+    return if (b) "true" else "false";
+}
+
+test "peer resolve array and const slice" {
+    try testPeerResolveArrayConstSlice(true);
+    try comptime testPeerResolveArrayConstSlice(true);
+}
+fn testPeerResolveArrayConstSlice(b: bool) !void {
+    const value1 = if (b) "aoeu" else @as([]const u8, "zz");
+    const value2 = if (b) @as([]const u8, "zz") else "aoeu";
+    try expect(mem.eql(u8, value1, "aoeu"));
+    try expect(mem.eql(u8, value2, "zz"));
+}
+
+test "peer type resolution: ?T and T" {
+    try expect(peerTypeTAndOptionalT(true, false).? == 0);
+    try expect(peerTypeTAndOptionalT(false, false).? == 3);
+    comptime {
+        try expect(peerTypeTAndOptionalT(true, false).? == 0);
+        try expect(peerTypeTAndOptionalT(false, false).? == 3);
+    }
+}
+fn peerTypeTAndOptionalT(c: bool, b: bool) ?usize {
+    if (c) {
+        return if (b) null else @as(usize, 0);
+    }
+
+    return @as(usize, 3);
+}
+
+test "peer type resolution: *[0]u8 and []const u8" {
+    try expect(peerTypeEmptyArrayAndSlice(true, "hi").len == 0);
+    try expect(peerTypeEmptyArrayAndSlice(false, "hi").len == 1);
+    comptime {
+        try expect(peerTypeEmptyArrayAndSlice(true, "hi").len == 0);
+        try expect(peerTypeEmptyArrayAndSlice(false, "hi").len == 1);
+    }
+}
+fn peerTypeEmptyArrayAndSlice(a: bool, slice: []const u8) []const u8 {
+    if (a) {
+        return &[_]u8{};
+    }
+
+    return slice[0..1];
+}
+test "peer type resolution: *[0]u8, []const u8, and anyerror![]u8" {
+    {
+        var data = "hi".*;
+        const slice = data[0..];
+        try expect((try peerTypeEmptyArrayAndSliceAndError(true, slice)).len == 0);
+        try expect((try peerTypeEmptyArrayAndSliceAndError(false, slice)).len == 1);
+    }
+    comptime {
+        var data = "hi".*;
+        const slice = data[0..];
+        try expect((try peerTypeEmptyArrayAndSliceAndError(true, slice)).len == 0);
+        try expect((try peerTypeEmptyArrayAndSliceAndError(false, slice)).len == 1);
+    }
+}
+fn peerTypeEmptyArrayAndSliceAndError(a: bool, slice: []u8) anyerror![]u8 {
+    if (a) {
+        return &[_]u8{};
+    }
+
+    return slice[0..1];
+}
+
+test "peer type resolution: *const T and ?*T" {
+    const a: *const usize = @ptrFromInt(0x123456780);
+    const b: ?*usize = @ptrFromInt(0x123456780);
+    try expect(a == b);
+    try expect(b == a);
+}
+
+test "peer type resolution: error union switch" {
+    // Случаи без ошибок и error являются одинаковыми только в том случае, если случай ошибки является просто выражением switch;
+    // шаблон "if (x) {...} else |err| blk: { switch (err) {...} }" не рассматривает
+    // случай без ошибок и случай с ошибкой как равноправные.
+    var a: error{ A, B, C }!u32 = 0;
+    _ = &a;
+    const b = if (a) |x|
+        x + 3
+    else |err| switch (err) {
+        error.A => 0,
+        error.B => 1,
+        error.C => null,
+    };
+    try expect(@TypeOf(b) == ?u32);
+
+    // Варианты без ошибок и error являются одинаковыми только в том случае, если случай ошибки является просто выражением switch;
+    // шаблон "x catch |err| blk: { switch (err) {...} }" не учитывает развернутый `x`
+    // и случай ошибки должны быть одинаковыми.
+    const c = a catch |err| switch (err) {
+        error.A => 0,
+        error.B => 1,
+        error.C => null,
+    };
+    try expect(@TypeOf(c) == ?u32);
+}
+```
+```bash
+$ zig test test_peer_type_resolution.zig
+1/8 test_peer_type_resolution.test.peer resolve int widening...OK
+2/8 test_peer_type_resolution.test.peer resolve arrays of different size to const slice...OK
+3/8 test_peer_type_resolution.test.peer resolve array and const slice...OK
+4/8 test_peer_type_resolution.test.peer type resolution: ?T and T...OK
+5/8 test_peer_type_resolution.test.peer type resolution: *[0]u8 and []const u8...OK
+6/8 test_peer_type_resolution.test.peer type resolution: *[0]u8, []const u8, and anyerror![]u8...OK
+7/8 test_peer_type_resolution.test.peer type resolution: *const T and ?*T...OK
+8/8 test_peer_type_resolution.test.peer type resolution: error union switch...OK
+All 8 tests passed.
+```
 ------------
