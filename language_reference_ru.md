@@ -6443,4 +6443,123 @@ $ zig test test_peer_type_resolution.zig
 8/8 test_peer_type_resolution.test.peer type resolution: error union switch...OK
 All 8 tests passed.
 ```
+
+------------
+### Zero Bit Types
+
+Для некоторых типов `@sizeOf` равно 0:
+
+- void
+- Целые числа `u0` и `i0`.
+- Массивы и векторы с len 0 или с типом элемента который является нулевым разрядным типом.
+- Перечисление только с 1 тегом.
+- Структура, все поля которой имеют нулевые разрядные типы.
+- Объединение только с 1 полем которое имеет нулевой разрядный тип.
+
+Эти типы могут иметь только одно возможное значение и следовательно для их представления требуется 0 бит. Код
+использующий эти типы не включается в окончательный сгенерированный код:
+
+```zig
+export fn entry() void {
+    var x: void = {};
+    var y: void = {};
+    x = y;
+    y = x;
+}
+```
+
+Когда это превращается в машинный код в теле ввода не генерируется код, даже в режиме отладки. Например, на x86_64:
+```asm
+0000000000000010 <entry>:
+  10:	55                   	push   %rbp
+  11:	48 89 e5             	mov    %rsp,%rbp
+  14:	5d                   	pop    %rbp
+  15:	c3                   	retq
+```
+
+Эти инструкции по сборке не содержат никакого кода связанного со значениями `void` - они выполняют только пролог и
+эпилог вызова функции.
+
+#### void
+
+`void` может быть полезен для создания экземпляров универсальных типов. Например, если задана Map(Key, Value),
+можно передать `void` для типа значения, чтобы превратить его в набор:
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+
+test "turn HashMap into a set with void" {
+    var map = std.AutoHashMap(i32, void).init(std.testing.allocator);
+    defer map.deinit();
+
+    try map.put(1, {});
+    try map.put(2, {});
+
+    try expect(map.contains(2));
+    try expect(!map.contains(3));
+
+    _ = map.remove(2);
+    try expect(!map.contains(2));
+}
+```
+```bash
+$ zig test test_void_in_hashmap.zig
+1/1 test_void_in_hashmap.test.turn HashMap into a set with void...OK
+All 1 tests passed.
+```
+
+Обратите внимание, что это отличается от использования фиктивного значения для значения хэш-мапы. При использовании
+`void` в качестве типа значения тип записи хэш-мапы не имеет поля значения и таким образом хэш-мапы занимает меньше
+места. Далее, весь код, который связан с сохранением и загрузкой значения, удаляется, как показано выше.
+
+`void` отличается от `anyopaque`. Известный размер `void` равен 0 байтам, а `anyopaque` имеет неизвестный, но ненулевой
+размер.
+
+Выражения типа `void` - единственные значение которых можно игнорировать. Например, игнорирование выражения отличного
+от `void` приводит к ошибке компиляции:
+
+```zig
+test "ignoring expression value" {
+    foo();
+}
+
+fn foo() i32 {
+    return 1234;
+}
+```
+```bash
+
+$ zig test test_expression_ignored.zig
+doc/langref/test_expression_ignored.zig:2:8: error: value of type 'i32' ignored
+    foo();
+    ~~~^~
+doc/langref/test_expression_ignored.zig:2:8: note: all non-void values must be used
+doc/langref/test_expression_ignored.zig:2:8: note: to discard the value, assign it to '_'
+```
+
+Однако, если выражение имеет тип `void` ошибки не будет. Результаты выражения можно явно проигнорировать, присвоив им
+значение _.
+
+```zig
+test "void is ignored" {
+    returnsVoid();
+}
+
+test "explicitly ignoring expression value" {
+    _ = foo();
+}
+
+fn returnsVoid() void {}
+
+fn foo() i32 {
+    return 1234;
+}
+```
+```bash
+$ zig test test_void_ignored.zig
+1/2 test_void_ignored.test.void is ignored...OK
+2/2 test_void_ignored.test.explicitly ignoring expression value...OK
+All 2 tests passed.
+```
 ------------
