@@ -6741,3 +6741,689 @@ pub usingnamespace @cImport({
 контроль над тем какие объявления предоставляет данный файл.
 
 ------------
+### comptime
+
+**Zig** придает большое значение тому известно ли выражение во время компиляции. Существует несколько различных
+областей применения этой концепции и эти строительные блоки используются для того чтобы язык был компактным,
+удобочитаемым и мощным.
+
+#### Introducing the Compile-Time Concept
+
+##### Compile-Time Parameters
+
+Параметры времени компиляции - это то как **Zig** реализует обобщения. Это утиная типизация во время компиляции.
+
+```zig
+fn max(comptime T: type, a: T, b: T) T {
+    return if (a > b) a else b;
+}
+fn gimmeTheBiggerFloat(a: f32, b: f32) f32 {
+    return max(f32, a, b);
+}
+fn gimmeTheBiggerInteger(a: u64, b: u64) u64 {
+    return max(u64, a, b);
+}
+```
+
+В **Zig** типы являются первоклассными пользователями. Их можно присваивать переменным, передавать в качестве параметров
+функциям и возвращать из функций. Однако они могут использоваться только в выражениях, которые известны во время
+компиляции, поэтому параметр `T` в приведенном выше фрагменте должен быть помечен как `comptime`.
+
+Параметр `comptime` означает, что:
+
+- В месте вызова значение должно быть известно во время компиляции, в противном случае это ошибка компиляции.
+- В определении функции значение известно во время компиляции.
+
+Например, если бы мы ввели другую функцию в приведенный выше фрагмент:
+
+```zig
+fn max(comptime T: type, a: T, b: T) T {
+    return if (a > b) a else b;
+}
+test "try to pass a runtime type" {
+    foo(false);
+}
+fn foo(condition: bool) void {
+    const result = max(if (condition) f32 else u64, 1234, 5678);
+    _ = result;
+}
+```
+```bash
+$ zig test test_unresolved_comptime_value.zig
+doc/langref/test_unresolved_comptime_value.zig:8:28: error: unable to resolve comptime value
+    const result = max(if (condition) f32 else u64, 1234, 5678);
+                           ^~~~~~~~~
+doc/langref/test_unresolved_comptime_value.zig:8:28: note: condition in comptime branch must be comptime-known
+referenced by:
+    test.try to pass a runtime type: doc/langref/test_unresolved_comptime_value.zig:5:5
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+```
+
+Это ошибка, потому что программист попытался передать значение известное только во время выполнения, функции которая
+ожидает значение известное во время компиляции.
+
+Другой способ получить ошибку - это передать тип, который нарушает проверку типов при анализе функции. Вот что значит
+использовать утиную типизацию во время компиляции.
+
+Например:
+
+```zig
+fn max(comptime T: type, a: T, b: T) T {
+    return if (a > b) a else b;
+}
+test "try to compare bools" {
+    _ = max(bool, true, false);
+}
+```
+```bash
+$ zig test test_comptime_mismatched_type.zig
+doc/langref/test_comptime_mismatched_type.zig:2:18: error: operator > not allowed for type 'bool'
+    return if (a > b) a else b;
+               ~~^~~
+referenced by:
+    test.try to compare bools: doc/langref/test_comptime_mismatched_type.zig:5:12
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+```
+
+С другой стороны, внутри определения функции с параметром `comptime` значение известно во время компиляции. Это
+означает, что мы действительно могли бы заставить это работать для типа `bool`, если бы захотели:
+
+```zig
+fn max(comptime T: type, a: T, b: T) T {
+    if (T == bool) {
+        return a or b;
+    } else if (a > b) {
+        return a;
+    } else {
+        return b;
+    }
+}
+test "try to compare bools" {
+    try @import("std").testing.expect(max(bool, false, true) == true);
+}
+```
+```bash
+$ zig test test_comptime_max_with_bool.zig
+1/1 test_comptime_max_with_bool.test.try to compare bools...OK
+All 1 tests passed.
+```
+
+Это работает, потому что **Zig** неявно встраивает выражения `if` когда условие известно во время компиляции и компилятор
+гарантирует, что он пропустит анализ неиспользованной ветви.
+
+Это означает, что фактическая функция сгенерированная для `max` в этой ситуации выглядит следующим образом:
+
+```zig
+fn max(a: bool, b: bool) bool {
+    {
+        return a or b;
+    }
+}
+```
+
+Весь код который имел дело с известными во время компиляции значениями удаляется и у нас остается только необходимый
+для выполнения задачи код во время выполнения.
+
+Это работает аналогично для выражений `switch` - они неявно встраиваются когда целевое выражение известно во время
+компиляции.
+
+##### Compile-Time Variables
+
+В **Zig** программист может помечать переменные как `comptime`. Это гарантирует компилятору, что каждая загрузка и
+сохранение переменной выполняется во время компиляции. Любое нарушение этого правила приводит к ошибке компиляции.
+
+Это в сочетании с тем фактом, что мы можем встраивать циклы позволяет нам написать функцию, которая частично
+вычисляется во время компиляции и частично во время выполнения.
+
+Например:
+
+```zig
+const expect = @import("std").testing.expect;
+
+const CmdFn = struct {
+    name: []const u8,
+    func: fn (i32) i32,
+};
+
+const cmd_fns = [_]CmdFn{
+    CmdFn{ .name = "one", .func = one },
+    CmdFn{ .name = "two", .func = two },
+    CmdFn{ .name = "three", .func = three },
+};
+fn one(value: i32) i32 {
+    return value + 1;
+}
+fn two(value: i32) i32 {
+    return value + 2;
+}
+fn three(value: i32) i32 {
+    return value + 3;
+}
+
+fn performFn(comptime prefix_char: u8, start_value: i32) i32 {
+    var result: i32 = start_value;
+    comptime var i = 0;
+    inline while (i < cmd_fns.len) : (i += 1) {
+        if (cmd_fns[i].name[0] == prefix_char) {
+            result = cmd_fns[i].func(result);
+        }
+    }
+    return result;
+}
+
+test "perform fn" {
+    try expect(performFn('t', 1) == 6);
+    try expect(performFn('o', 0) == 1);
+    try expect(performFn('w', 99) == 99);
+}
+```
+```bash
+$ zig test test_comptime_evaluation.zig
+1/1 test_comptime_evaluation.test.perform fn...OK
+All 1 tests passed.
+```
+
+Этот пример немного надуманный потому что компонент оценки во время компиляции не нужен; этот код работал бы нормально,
+если бы все это выполнялось во время выполнения. Но в конечном итоге он генерирует другой код. В этом примере функция
+`performFn` генерируется три раза подряд для разных значений параметра `prefix_char`:
+
+```zig
+// Из строки:
+// expect(performFn('t', 1) == 6);
+fn performFn(start_value: i32) i32 {
+    var result: i32 = start_value;
+    result = two(result);
+    result = three(result);
+    return result;
+}
+```
+```zig
+// Из строки:
+// expect(performFn('o', 0) == 1);
+fn performFn(start_value: i32) i32 {
+    var result: i32 = start_value;
+    result = one(result);
+    return result;
+}
+```
+```zig
+// Из строки:
+// expect(performFn('w', 99) == 99);
+fn performFn(start_value: i32) i32 {
+    var result: i32 = start_value;
+    _ = &result;
+    return result;
+}
+```
+
+Обратите внимание, что это происходит даже при отладочной сборке. Это не способ написать более оптимизированный код, но
+это способ убедиться, что то, что должно произойти во время компиляции действительно происходит во время компиляции.
+Это позволяет выявлять больше ошибок и обеспечивает выразительность для достижения которой в других языках требуется
+использование макросов, сгенерированного кода или препроцессора.
+
+##### Compile-Time Expressions
+
+В **Zig** имеет значение, известно ли данное выражение во время компиляции или во время выполнения. Программист может
+использовать выражение `comptime`, чтобы гарантировать, что выражение будет вычислено во время компиляции. Если это не
+может быть выполнено, компилятор выдаст ошибку. Например:
+
+```zig
+test_comptime_call_extern_function.zig
+
+extern fn exit() noreturn;
+
+test "foo" {
+    comptime {
+        exit();
+    }
+}
+```
+```bash
+$ zig test test_comptime_call_extern_function.zig
+doc/langref/test_comptime_call_extern_function.zig:5:13: error: comptime call of extern function
+        exit();
+        ~~~~^~
+```
+
+Не имеет смысла чтобы программа могла вызвать `exit()` (или любую другую внешнюю функцию) во время компиляции поэтому
+это ошибка компиляции. Однако выражение `comptime` делает гораздо больше, чем просто иногда вызывает ошибку компиляции.
+
+Внутри выражения `comptime`:
+
+- Все переменные являются переменными времени компиляции.
+- Все выражения `if`, `while`, `for` и `switch` вычисляются во время компиляции или выдают ошибку компиляции если это
+невозможно.
+- Все выражения `return` и `try` недопустимы (если только сама функция не вызывается во время компиляции).
+- Весь код имеющий побочные эффекты во время выполнения или зависящий от значений во время выполнения выдает ошибку
+компиляции.
+- Все вызовы функций приводят к тому, что компилятор интерпретирует функцию во время компиляции выдавая ошибку
+компиляции если функция пытается выполнить что-то, что приводит к глобальным побочным эффектам во время выполнения.
+
+Это означает, что программист может создать функцию, которая вызывается как во время компиляции, так и во время
+выполнения без каких-либо изменений в самой функции.
+
+Давайте рассмотрим пример:
+
+```zig
+const expect = @import("std").testing.expect;
+
+fn fibonacci(index: u32) u32 {
+    if (index < 2) return index;
+    return fibonacci(index - 1) + fibonacci(index - 2);
+}
+
+test "fibonacci" {
+    // тестируем fibonacci во время выполнения
+    try expect(fibonacci(7) == 13);
+
+    // тестируем fibonacci во время компиляции
+    try comptime expect(fibonacci(7) == 13);
+}
+```
+```bash
+$ zig test test_fibonacci_recursion.zig
+1/1 test_fibonacci_recursion.test.fibonacci...OK
+All 1 tests passed.
+```
+
+Представьте, что мы забыли базовый вариант рекурсивной функции и попытались запустить тесты:
+
+```zig
+const expect = @import("std").testing.expect;
+
+fn fibonacci(index: u32) u32 {
+    //if (index < 2) return index;
+    return fibonacci(index - 1) + fibonacci(index - 2);
+}
+
+test "fibonacci" {
+    try comptime expect(fibonacci(7) == 13);
+}
+```
+```bash
+$ zig test test_fibonacci_comptime_overflow.zig
+doc/langref/test_fibonacci_comptime_overflow.zig:5:28: error: overflow of integer type 'u32' with value '-1'
+    return fibonacci(index - 1) + fibonacci(index - 2);
+                     ~~~~~~^~~
+doc/langref/test_fibonacci_comptime_overflow.zig:5:21: note: called from here (7 times)
+    return fibonacci(index - 1) + fibonacci(index - 2);
+           ~~~~~~~~~^~~~~~~~~~~
+doc/langref/test_fibonacci_comptime_overflow.zig:9:34: note: called from here
+    try comptime expect(fibonacci(7) == 13);
+                        ~~~~~~~~~^~~
+```
+
+Компилятор выдает ошибку которая является трассировкой стека при попытке оценить функцию во время компиляции.
+
+К счастью, мы использовали целое число без знака и поэтому когда мы попытались вычесть 1 из 0 это вызвало
+неопределенное поведение которое всегда является ошибкой компиляции если компилятор знает, что это произошло. Но что
+бы произошло если бы мы использовали целое число со знаком?
+
+```zig
+const assert = @import("std").debug.assert;
+
+fn fibonacci(index: i32) i32 {
+    //if (index < 2) return index;
+    return fibonacci(index - 1) + fibonacci(index - 2);
+}
+
+test "fibonacci" {
+    try comptime assert(fibonacci(7) == 13);
+}
+```
+
+Предполагается, что компилятор замечает, что для вычисления этой функции во время компиляции потребовалось более 1000
+переходов и таким образом выдает ошибку и прекращает работу. Если программист хочет увеличить бюджет на вычисления во
+время компиляции он может использовать встроенную функцию под названием `@setEvalBranchQuota` чтобы изменить число по
+умолчанию 1000 на что-то другое.
+
+Однако в компиляторе есть конструктивный недостаток из-за которого он приводит к переполнению стека вместо надлежащего
+поведения. Я очень сожалею об этом. Я надеюсь, что это будет устранено до следующего выпуска.
+
+Что, если мы исправим базовый вариант, но введем неправильное значение в строку ожидания?
+
+```zig
+const assert = @import("std").debug.assert;
+
+fn fibonacci(index: i32) i32 {
+    if (index < 2) return index;
+    return fibonacci(index - 1) + fibonacci(index - 2);
+}
+
+test "fibonacci" {
+    try comptime assert(fibonacci(7) == 99999);
+}
+```
+```bash
+$ zig test test_fibonacci_comptime_unreachable.zig
+lib/std/debug.zig:412:14: error: reached unreachable code
+    if (!ok) unreachable; // assertion failure
+             ^~~~~~~~~~~
+doc/langref/test_fibonacci_comptime_unreachable.zig:9:24: note: called from here
+    try comptime assert(fibonacci(7) == 99999);
+                 ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+```
+
+На уровне контейнера (вне какой-либо функции) все выражения неявно являются выражениями `comptime`. Это означает, что мы
+можем использовать функции для инициализации сложных статических данных. Например:
+
+```zig
+const first_25_primes = firstNPrimes(25);
+const sum_of_first_25_primes = sum(&first_25_primes);
+
+fn firstNPrimes(comptime n: usize) [n]i32 {
+    var prime_list: [n]i32 = undefined;
+    var next_index: usize = 0;
+    var test_number: i32 = 2;
+    while (next_index < prime_list.len) : (test_number += 1) {
+        var test_prime_index: usize = 0;
+        var is_prime = true;
+        while (test_prime_index < next_index) : (test_prime_index += 1) {
+            if (test_number % prime_list[test_prime_index] == 0) {
+                is_prime = false;
+                break;
+            }
+        }
+        if (is_prime) {
+            prime_list[next_index] = test_number;
+            next_index += 1;
+        }
+    }
+    return prime_list;
+}
+
+fn sum(numbers: []const i32) i32 {
+    var result: i32 = 0;
+    for (numbers) |x| {
+        result += x;
+    }
+    return result;
+}
+
+test "variable values" {
+    try @import("std").testing.expect(sum_of_first_25_primes == 1060);
+}
+```
+```bash
+$ zig test test_container-level_comptime_expressions.zig
+1/1 test_container-level_comptime_expressions.test.variable values...OK
+All 1 tests passed.
+```
+
+Когда мы компилируем эту программу **Zig** генерирует константы с заранее вычисленным ответом. Вот строки из
+сгенерированного LLVM IR:
+
+```llvm
+@0 = internal unnamed_addr constant [25 x i32] [i32 2, i32 3, i32 5, i32 7, i32 11, i32 13, i32 17, i32 19, i32 23, i32 29, i32 31, i32 37, i32 41, i32 43, i32 47, i32 53, i32 59, i32 61, i32 67, i32 71, i32 73, i32 79, i32 83, i32 89, i32 97]
+@1 = internal unnamed_addr constant i32 1060
+```
+
+Обратите внимание, что нам не пришлось делать ничего особенного с синтаксисом этих функций. Например, мы могли бы
+вызвать функцию `sum` как есть с фрагментом чисел, длина и значения которых были известны только во время выполнения.
+
+#### Generic Data Structures
+
+**Zig** использует возможности `comptime` для реализации общих структур данных без использования специального
+синтаксиса.
+
+Вот пример общей структуры данных списка.
+
+```zig
+fn List(comptime T: type) type {
+    return struct {
+        items: []T,
+        len: usize,
+    };
+}
+
+// Общая структура данных списка может быть создана путем передачи типа:
+var buffer: [10]i32 = undefined;
+var list = List(i32){
+    .items = &buffer,
+    .len = 0,
+};
+```
+
+Вот и все. Это функция которая возвращает анонимную структуру. В целях получения сообщений об ошибках и отладки **Zig**
+выводит имя `"List(i32)"` из имени функции и параметров вызываемых при создании анонимной структуры.
+
+Чтобы явно присвоить типу имя, мы присваиваем его константе.
+
+```zig
+const Node = struct {
+    next: ?*Node,
+    name: []const u8,
+};
+
+var node_a = Node{
+    .next = null,
+    .name = "Node A",
+};
+
+var node_b = Node{
+    .next = &node_a,
+    .name = "Node B",
+};
+```
+
+В этом примере структура `Node` ссылается на саму себя. Это работает, потому что все объявления верхнего уровня не зависят
+от порядка. Пока компилятор может определять размер структуры, он может свободно ссылаться на себя. В этом случае `Node`
+ссылается на себя как на указатель который имеет четко определенный размер во время компиляции поэтому он работает
+нормально.
+
+#### Case Study: print in Zig
+
+Собрав все это вместе, давайте посмотрим как работает печать в **Zig**.
+
+```zig
+const print = @import("std").debug.print;
+
+const a_number: i32 = 1234;
+const a_string = "foobar";
+
+pub fn main() void {
+    print("here is a string: '{s}' here is a number: {}\n", .{ a_string, a_number });
+}
+```
+```bash
+$ zig build-exe print.zig
+$ ./print
+here is a string: 'foobar' here is a number: 1234
+```
+
+Давайте разберемся с реализацией этого и посмотрим, как это работает:
+
+```zig
+const Writer = struct {
+    /// Вызывает функцию print и затем очищает буфер.
+    pub fn print(self: *Writer, comptime format: []const u8, args: anytype) anyerror!void {
+        const State = enum {
+            start,
+            open_brace,
+            close_brace,
+        };
+
+        comptime var start_index: usize = 0;
+        comptime var state = State.start;
+        comptime var next_arg: usize = 0;
+
+        inline for (format, 0..) |c, i| {
+            switch (state) {
+                State.start => switch (c) {
+                    '{' => {
+                        if (start_index < i) try self.write(format[start_index..i]);
+                        state = State.open_brace;
+                    },
+                    '}' => {
+                        if (start_index < i) try self.write(format[start_index..i]);
+                        state = State.close_brace;
+                    },
+                    else => {},
+                },
+                State.open_brace => switch (c) {
+                    '{' => {
+                        state = State.start;
+                        start_index = i;
+                    },
+                    '}' => {
+                        try self.printValue(args[next_arg]);
+                        next_arg += 1;
+                        state = State.start;
+                        start_index = i + 1;
+                    },
+                    's' => {
+                        continue;
+                    },
+                    else => @compileError("Unknown format character: " ++ [1]u8{c}),
+                },
+                State.close_brace => switch (c) {
+                    '}' => {
+                        state = State.start;
+                        start_index = i;
+                    },
+                    else => @compileError("Single '}' encountered in format string"),
+                },
+            }
+        }
+        comptime {
+            if (args.len != next_arg) {
+                @compileError("Unused arguments");
+            }
+            if (state != State.start) {
+                @compileError("Incomplete format string: " ++ format);
+            }
+        }
+        if (start_index < format.len) {
+            try self.write(format[start_index..format.len]);
+        }
+        try self.flush();
+    }
+
+    fn write(self: *Writer, value: []const u8) !void {
+        _ = self;
+        _ = value;
+    }
+    pub fn printValue(self: *Writer, value: anytype) !void {
+        _ = self;
+        _ = value;
+    }
+    fn flush(self: *Writer) !void {
+        _ = self;
+    }
+};
+```
+
+Это доказательство реализации концепции; реальная функция в стандартной библиотеке обладает большими возможностями
+форматирования.
+
+Обратите внимание, что это не запрограммировано жестко в компиляторе **Zig**; это пользовательский код в стандартной
+библиотеке.
+
+Когда эта функция анализируется из нашего примера кода приведенного выше, **Zig** частично вычисляет функцию и выдает
+функцию которая на самом деле выглядит следующим образом:
+
+```zig
+pub fn print(self: *Writer, arg0: []const u8, arg1: i32) !void {
+    try self.write("here is a string: '");
+    try self.printValue(arg0);
+    try self.write("' here is a number: ");
+    try self.printValue(arg1);
+    try self.write("\n");
+    try self.flush();
+}
+```
+
+`printValue` - это функция, которая принимает параметр любого типа и выполняет разные действия в зависимости от типа:
+
+```zig
+const Writer = struct {
+    pub fn printValue(self: *Writer, value: anytype) !void {
+        switch (@typeInfo(@TypeOf(value))) {
+            .Int => {
+                return self.writeInt(value);
+            },
+            .Float => {
+                return self.writeFloat(value);
+            },
+            .Pointer => {
+                return self.write(value);
+            },
+            else => {
+                @compileError("Unable to print type '" ++ @typeName(@TypeOf(value)) ++ "'");
+            },
+        }
+    }
+
+    fn write(self: *Writer, value: []const u8) !void {
+        _ = self;
+        _ = value;
+    }
+    fn writeInt(self: *Writer, value: anytype) !void {
+        _ = self;
+        _ = value;
+    }
+    fn writeFloat(self: *Writer, value: anytype) !void {
+        _ = self;
+        _ = value;
+    }
+};
+```
+
+А теперь, что произойдет, если мы введем слишком много аргументов для печати?
+
+```zig
+const print = @import("std").debug.print;
+
+const a_number: i32 = 1234;
+const a_string = "foobar";
+
+test "print too many arguments" {
+    print("here is a string: '{s}' here is a number: {}\n", .{
+        a_string,
+        a_number,
+        a_number,
+    });
+}
+```
+```bash
+$ zig test test_print_too_many_args.zig
+lib/std/fmt.zig:203:18: error: unused argument in 'here is a string: '{s}' here is a number: {}
+                               '
+            1 => @compileError("unused argument in '" ++ fmt ++ "'"),
+                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+referenced by:
+    print__anon_2377: lib/std/io/Writer.zig:24:26
+    print: lib/std/io.zig:324:47
+    remaining reference traces hidden; use '-freference-trace' to see all reference traces
+
+```
+
+**Zig** предоставляет программистам инструменты необходимые для защиты от их собственных ошибок.
+
+**Zig** не волнует является ли аргумент `format` строковым литералом, важно только, что это известное во время
+компиляции значение которое может быть преобразовано в `[]const u8`:
+
+```zig
+const print = @import("std").debug.print;
+
+const a_number: i32 = 1234;
+const a_string = "foobar";
+const fmt = "here is a string: '{s}' here is a number: {}\n";
+
+pub fn main() void {
+    print(fmt, .{ a_string, a_number });
+}
+```
+```bash
+$ zig build-exe print_comptime-known_format.zig
+$ ./print_comptime-known_format
+here is a string: 'foobar' here is a number: 1234
+```
+
+Это работает нормально.
+
+**Zig** не использует форматирование строк в специальном регистре в компиляторе и вместо этого предоставляет достаточно
+возможностей для выполнения этой задачи в пользовательской среде. Это достигается без использования другого языка поверх
+**Zig**, такого как макроязык или язык препроцессора. Это **Zig** на протяжении всего пути.
+
+------------
