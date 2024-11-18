@@ -6702,4 +6702,42 @@ error: the following test command failed with exit code 1:
 |`@typeInfo(x)`| `ptr` |`x` has no result location|
 |`x << y`| `ptr` |`x` and y do not have result locations|
 
+
+------------
+### usingnamespace
+
+`usingnamespace` - это объявление которое объединяет все открытые объявления операнда которые должны быть `struct`,
+`union`, `enum` или `opaque`, в пространство имен:
+
+```zig
+test "using std namespace" {
+    const S = struct {
+        usingnamespace @import("std");
+    };
+    try S.testing.expect(true);
+}
+```
+```bash
+$ zig test test_usingnamespace.zig
+1/1 test_usingnamespace.test.using std namespace...OK
+All 1 tests passed.
+```
+
+`usingnamespace` имеет важное значение при организации общедоступного API для файла или пакета. Например, можно
+использовать `c.zig` со всеми импортируемыми C:
+
+```zig
+pub usingnamespace @cImport({
+    @cInclude("epoxy/gl.h");
+    @cInclude("GLFW/glfw3.h");
+    @cDefine("STBI_ONLY_PNG", "");
+    @cDefine("STBI_NO_STDIO", "");
+    @cInclude("stb_image.h");
+});
+```
+
+В приведенном выше примере показано, что использование `pub` для определения пространства `usingnamespace` дополнительно
+делает импортируемые объявления общедоступными. Это может использоваться для пересылки объявлений, предоставляя точный
+контроль над тем какие объявления предоставляет данный файл.
+
 ------------
