@@ -7601,4 +7601,14 @@ $ zig test test_global_assembly.zig -target x86_64-linux
 1/1 test_global_assembly.test.global assembly...OK
 All 1 tests passed.
 ```
+
+------------
+### Atomics
+
+TODO: @fence()
+
+TODO: @atomic rmw
+
+TODO: builtin atomic memory ordering enum
+
 ------------
