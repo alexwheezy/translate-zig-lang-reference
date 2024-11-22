@@ -9720,3 +9720,89 @@ All 1 tests passed.
 (включительно) до `@workGroupSize(dimension)` (исключительно).
 
 ------------
+### Build Mode
+
+Zig имеет четыре режима сборки:
+
+- Debug (default)
+- ReleaseFast
+- ReleaseSafe
+- ReleaseSmall
+
+Чтобы добавить стандартные параметры сборки в файл `build.zig`, выполните следующие действия:
+
+```zig
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const optimize = b.standardOptimizeOption(.{});
+    const exe = b.addExecutable(.{
+        .name = "example",
+        .root_source_file = b.path("example.zig"),
+        .optimize = optimize,
+    });
+    b.default_step.dependOn(&exe.step);
+}
+```
+
+ Это делает доступными следующие параметры:
+
+- -Doptimize=Debug
+    - Оптимизация отключена, а безопасность включена (по умолчанию)
+- -Doptimize=ReleaseSafe
+    - Оптимизация и безопасность
+- -Doptimize=ReleaseFast
+    - Включение оптимизации и отключение безопасности
+- -Doptimize=ReleaseSmall
+    - Включена оптимизация размеров и отключена защита
+
+
+#### Debug
+
+```bash
+$ zig build-exe example.zig
+```
+
+- Высокая скорость компиляции
+- Включены проверки безопасности
+- Низкая производительность во время выполнения
+- Большой размер двоичного файла
+- Нет требований к воспроизводимой сборке
+
+#### ReleaseFast
+
+```bash
+$ zig build-exe example.zig -O ReleaseFast
+```
+
+- Высокая производительность во время выполнения
+- Отключены проверки безопасности
+- Низкая скорость компиляции
+- Большой размер двоичного файла
+- Воспроизводимая сборка
+
+#### ReleaseSafe
+
+```bash
+$ zig build-exe example.zig -O ReleaseSafe
+```
+
+- Средняя производительность во время выполнения
+- Включены проверки безопасности
+- Низкая скорость компиляции
+- Большой размер двоичного файла
+- Воспроизводимая сборка
+
+#### ReleaseSmall
+
+```bash
+$ zig build-exe example.zig -O ReleaseSmall
+```
+
+- Средняя производительность во время выполнения
+- Отключены проверки безопасности
+- Низкая скорость компиляции
+- Небольшой размер двоичного файла
+- Воспроизводимая сборка
+
+------------
