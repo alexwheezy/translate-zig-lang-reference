@@ -9817,3 +9817,1243 @@ $ zig build-exe example.zig -O ReleaseSmall
 все ее функции перестают работать.
 
 ------------
+### Undefined Behavior
+
+В Zig есть много случаев неопределенного поведения. Если во время компиляции обнаруживается неопределенное поведение,
+Zig выдает ошибку компиляции и отказывается продолжать. Большинство неопределенных действий которые не могут быть
+обнаружены во время компиляции могут быть обнаружены во время выполнения. В таких случаях в Zig предусмотрены проверки
+безопасности. Проверки безопасности можно отключить для каждого блока с помощью `@setRuntimeSafety`. Режимы сборки
+`ReleaseFast` и `ReleaseSmall` отключают все проверки безопасности (за исключением тех, которые переопределяются
+`@setRuntimeSafety`), чтобы облегчить оптимизацию.
+
+При сбое проверки безопасности Zig завершает работу с трассировкой стека, например, следующим образом:
+
+```zig
+test "safety check" {
+    unreachable;
+}
+```
+```bash
+$ zig test test_undefined_behavior.zig
+1/1 test_undefined_behavior.test.safety check...thread 3571226 panic: reached unreachable code
+/home/andy/src/zig/doc/langref/test_undefined_behavior.zig:2:5: 0x103ce30 in test.safety check (test)
+    unreachable;
+    ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:157:25: 0x1048260 in mainTerminal (test)
+        if (test_fn.func()) |_| {
+                        ^
+/home/andy/src/zig/lib/compiler/test_runner.zig:37:28: 0x103e21b in main (test)
+        return mainTerminal();
+                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103d359 in posixCallMainAndExit (test)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103cec1 in _start (test)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+error: the following test command crashed:
+/home/andy/src/zig/.zig-cache/o/a71f9f37afd5b3c603d2b9ea72373fa7/test
+```
+
+#### Reaching Unreachable Code
+
+Во время компиляции:
+
+```zig
+comptime {
+    assert(false);
+}
+fn assert(ok: bool) void {
+    if (!ok) unreachable; // ошибка утверждения
+}
+```
+```bash
+$ zig test test_comptime_reaching_unreachable.zig
+doc/langref/test_comptime_reaching_unreachable.zig:5:14: error: reached unreachable code
+    if (!ok) unreachable; // assertion failure
+             ^~~~~~~~~~~
+doc/langref/test_comptime_reaching_unreachable.zig:2:11: note: called from here
+    assert(false);
+    ~~~~~~^~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    std.debug.assert(false);
+}
+```
+```zig
+$ zig build-exe runtime_reaching_unreachable.zig
+$ ./runtime_reaching_unreachable
+thread 3575642 panic: reached unreachable code
+/home/andy/src/zig/lib/std/debug.zig:412:14: 0x1036cdd in assert (runtime_reaching_unreachable)
+    if (!ok) unreachable; // ошибка утверждения
+             ^
+/home/andy/src/zig/doc/langref/runtime_reaching_unreachable.zig:4:21: 0x103507a in main (runtime_reaching_unreachable)
+    std.debug.assert(false);
+                    ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034929 in posixCallMainAndExit (runtime_reaching_unreachable)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034491 in _start (runtime_reaching_unreachable)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Index out of Bounds
+
+Во время компиляции:
+
+```zig
+comptime {
+    const array: [5]u8 = "hello".*;
+    const garbage = array[5];
+    _ = garbage;
+}
+```
+```bash
+$ zig test test_comptime_index_out_of_bounds.zig
+doc/langref/test_comptime_index_out_of_bounds.zig:3:27: error: index 5 outside array of length 5
+    const garbage = array[5];
+                          ^
+```
+
+Во время выполнения:
+
+```zig
+pub fn main() void {
+    const x = foo("hello");
+    _ = x;
+}
+
+fn foo(x: []const u8) u8 {
+    return x[5];
+}
+```
+```bash
+$ zig build-exe runtime_index_out_of_bounds.zig
+$ ./runtime_index_out_of_bounds
+thread 3567952 panic: index out of bounds: index 5, len 5
+/home/andy/src/zig/doc/langref/runtime_index_out_of_bounds.zig:7:13: 0x1037169 in foo (runtime_index_out_of_bounds)
+    return x[5];
+            ^
+/home/andy/src/zig/doc/langref/runtime_index_out_of_bounds.zig:2:18: 0x10350b6 in main (runtime_index_out_of_bounds)
+    const x = foo("hello");
+                 ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034959 in posixCallMainAndExit (runtime_index_out_of_bounds)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10344c1 in _start (runtime_index_out_of_bounds)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Cast Negative Number to Unsigned Integer
+
+Во время компиляции:
+
+```zig
+comptime {
+    const value: i32 = -1;
+    const unsigned: u32 = @intCast(value);
+    _ = unsigned;
+}
+```
+```zig
+$ zig test test_comptime_invalid_cast.zig
+doc/langref/test_comptime_invalid_cast.zig:3:36: error: type 'u32' cannot represent integer value '-1'
+    const unsigned: u32 = @intCast(value);
+                                   ^~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var value: i32 = -1; // известный во время выполнения
+    _ = &value;
+    const unsigned: u32 = @intCast(value);
+    std.debug.print("value: {}\n", .{unsigned});
+}
+```
+```bash
+
+$ zig build-exe runtime_invalid_cast.zig
+$ ./runtime_invalid_cast
+thread 3567914 panic: attempt to cast negative value to unsigned integer
+/home/andy/src/zig/doc/langref/runtime_invalid_cast.zig:6:27: 0x10351e2 in main (runtime_invalid_cast)
+    const unsigned: u32 = @intCast(value);
+                          ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034a49 in posixCallMainAndExit (runtime_invalid_cast)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10345b1 in _start (runtime_invalid_cast)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Чтобы получить максимальное значение целого числа без знака, используйте `std.math.maxInt`.
+
+#### Cast Truncates Data
+
+Во время компиляции:
+
+```zig
+comptime {
+    const spartan_count: u16 = 300;
+    const byte: u8 = @intCast(spartan_count);
+    _ = byte;
+}
+```
+```bash
+$ zig test test_comptime_invalid_cast_truncate.zig
+doc/langref/test_comptime_invalid_cast_truncate.zig:3:31: error: type 'u8' cannot represent integer value '300'
+    const byte: u8 = @intCast(spartan_count);
+                              ^~~~~~~~~~~~~
+
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var spartan_count: u16 = 300; // известный во время выполнения
+    _ = &spartan_count;
+    const byte: u8 = @intCast(spartan_count);
+    std.debug.print("value: {}\n", .{byte});
+}
+```
+```bash
+$ zig build-exe runtime_invalid_cast_truncate.zig
+$ ./runtime_invalid_cast_truncate
+thread 3576020 panic: integer cast truncated bits
+/home/andy/src/zig/doc/langref/runtime_invalid_cast_truncate.zig:6:22: 0x1035275 in main (runtime_invalid_cast_truncate)
+    const byte: u8 = @intCast(spartan_count);
+                     ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034ad9 in posixCallMainAndExit (runtime_invalid_cast_truncate)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034641 in _start (runtime_invalid_cast_truncate)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Чтобы обрезать биты, используйте `@truncate`.
+
+
+#### Integer Overflow
+
+##### Default Operations
+
+Следующие операторы могут вызвать переполнение целых чисел:
+
+- `+` (сложение)
+- `-` (вычитание)
+- `-` (отрицание)
+- `*` (умножение)
+- `/` (деление)
+- `@divTrunc` (деление)
+- `@divFloor` (деление)
+- `@divExact` (деление)
+
+Пример с добавлением во время компиляции:
+
+```zig
+comptime {
+    var byte: u8 = 255;
+    byte += 1;
+}
+```
+```bash
+$ zig test test_comptime_overflow.zig
+doc/langref/test_comptime_overflow.zig:3:10: error: overflow of integer type 'u8' with value '256'
+    byte += 1;
+    ~~~~~^~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var byte: u8 = 255;
+    byte += 1;
+    std.debug.print("value: {}\n", .{byte});
+}
+```
+```bash
+$ zig build-exe runtime_overflow.zig
+$ ./runtime_overflow
+thread 3574209 panic: integer overflow
+/home/andy/src/zig/doc/langref/runtime_overflow.zig:5:10: 0x103525e in main (runtime_overflow)
+    byte += 1;
+         ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034ad9 in posixCallMainAndExit (runtime_overflow)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034641 in _start (runtime_overflow)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+
+##### Standard Library Math Functions
+
+Эти функции предоставляемые стандартной библиотекой возвращают возможные ошибки.
+
+- `@import("std").math.add`
+- `@import("std").math.sub`
+- `@import("std").math.mul`
+- `@import("std").math.divTrunc`
+- `@import("std").math.divFloor`
+- `@import("std").math.divExact`
+- `@import("std").math.shl`
+
+Пример перехвата переполнения для добавления:
+
+```zig
+const math = @import("std").math;
+const print = @import("std").debug.print;
+pub fn main() !void {
+    var byte: u8 = 255;
+
+    byte = if (math.add(u8, byte, 1)) |result| result else |err| {
+        print("unable to add one: {s}\n", .{@errorName(err)});
+        return err;
+    };
+
+    print("result: {}\n", .{byte});
+}
+```
+```bash
+$ zig build-exe math_add.zig
+$ ./math_add
+unable to add one: Overflow
+error: Overflow
+/home/andy/src/zig/lib/std/math.zig:565:21: 0x10352a5 in add__anon_2592 (math_add)
+    if (ov[1] != 0) return error.Overflow;
+                    ^
+/home/andy/src/zig/doc/langref/math_add.zig:8:9: 0x1035243 in main (math_add)
+        return err;
+        ^
+```
+
+##### Builtin Overflow Functions
+
+Эти встроенные элементы возвращают кортеж, содержащий информацию о том, было ли переполнение (в виде `u1`) и возможно
+переполненные биты операции:
+
+- `@addWithOverflow`
+- `@subWithOverflow`
+- `@mulWithOverflow`
+- `@shlWithOverflow`
+
+Пример использования `@addWithOverflow`:
+
+```zig
+const print = @import("std").debug.print;
+pub fn main() void {
+    const byte: u8 = 255;
+
+    const ov = @addWithOverflow(byte, 10);
+    if (ov[1] != 0) {
+        print("overflowed result: {}\n", .{ov[0]});
+    } else {
+        print("result: {}\n", .{ov[0]});
+    }
+}
+```
+```bash
+$ zig build-exe addWithOverflow_builtin.zig
+$ ./addWithOverflow_builtin
+overflowed result: 9
+
+```
+
+
+##### Wrapping Operations
+
+Эти операции имеют гарантированную замкнутую семантику.
+
+- `+%` (обратное сложение)
+- `-%` (обратное вычитание)
+- `-%` (обратное отрицание)
+- `*%` (обратное умножение)
+
+```zig
+const std = @import("std");
+const expect = std.testing.expect;
+const minInt = std.math.minInt;
+const maxInt = std.math.maxInt;
+
+test "wraparound addition and subtraction" {
+    const x: i32 = maxInt(i32);
+    const min_val = x +% 1;
+    try expect(min_val == minInt(i32));
+    const max_val = min_val -% 1;
+    try expect(max_val == maxInt(i32));
+}
+```
+```bash
+$ zig test test_wraparound_semantics.zig
+1/1 test_wraparound_semantics.test.wraparound addition and subtraction...OK
+All 1 tests passed.
+```
+
+#### Exact Left Shift Overflow
+
+Во время компиляции:
+
+```zig
+comptime {
+    const x = @shlExact(@as(u8, 0b01010101), 2);
+    _ = x;
+}
+```
+```bash
+$ zig test test_comptime_shlExact_overwlow.zig
+doc/langref/test_comptime_shlExact_overwlow.zig:2:15: error: operation caused overflow
+    const x = @shlExact(@as(u8, 0b01010101), 2);
+              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var x: u8 = 0b01010101; // известный во время выполнения
+    _ = &x;
+    const y = @shlExact(x, 2);
+    std.debug.print("value: {}\n", .{y});
+}
+```
+```bash
+$ zig build-exe runtime_shlExact_overflow.zig
+$ ./runtime_shlExact_overflow
+thread 3577156 panic: left shift overflowed bits
+/home/andy/src/zig/doc/langref/runtime_shlExact_overflow.zig:6:5: 0x10352bd in main (runtime_shlExact_overflow)
+    const y = @shlExact(x, 2);
+    ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034b19 in posixCallMainAndExit (runtime_shlExact_overflow)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034681 in _start (runtime_shlExact_overflow)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Exact Right Shift Overflow
+
+Во время компиляции:
+
+```zig
+comptime {
+    const x = @shrExact(@as(u8, 0b10101010), 2);
+    _ = x;
+}
+```
+```bash
+$ zig test test_comptime_shrExact_overflow.zig
+doc/langref/test_comptime_shrExact_overflow.zig:2:15: error: exact shift shifted out 1 bits
+    const x = @shrExact(@as(u8, 0b10101010), 2);
+              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var x: u8 = 0b10101010; // runtime-known
+    _ = &x;
+    const y = @shrExact(x, 2);
+    std.debug.print("value: {}\n", .{y});
+}
+```
+```bash
+$ zig build-exe runtime_shrExact_overflow.zig
+$ ./runtime_shrExact_overflow
+thread 3579049 panic: right shift overflowed bits
+/home/andy/src/zig/doc/langref/runtime_shrExact_overflow.zig:6:5: 0x10352b9 in main (runtime_shrExact_overflow)
+    const y = @shrExact(x, 2);
+    ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034b19 in posixCallMainAndExit (runtime_shrExact_overflow)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034681 in _start (runtime_shrExact_overflow)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Division by Zero
+
+Во время компиляции:
+
+```zig
+comptime {
+    const a: i32 = 1;
+    const b: i32 = 0;
+    const c = a / b;
+    _ = c;
+}
+```
+```bash
+$ zig test test_comptime_division_by_zero.zig
+doc/langref/test_comptime_division_by_zero.zig:4:19: error: division by zero here causes undefined behavior
+    const c = a / b;
+                  ^
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var a: u32 = 1;
+    var b: u32 = 0;
+    _ = .{ &a, &b };
+    const c = a / b;
+    std.debug.print("value: {}\n", .{c});
+}
+```
+```bash
+$ zig build-exe runtime_division_by_zero.zig
+$ ./runtime_division_by_zero
+thread 3575479 panic: division by zero
+/home/andy/src/zig/doc/langref/runtime_division_by_zero.zig:7:17: 0x10351f6 in main (runtime_division_by_zero)
+    const c = a / b;
+                ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034a49 in posixCallMainAndExit (runtime_division_by_zero)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10345b1 in _start (runtime_division_by_zero)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Remainder Division by Zero
+
+Во время компиляции:
+
+```zig
+comptime {
+    const a: i32 = 10;
+    const b: i32 = 0;
+    const c = a % b;
+    _ = c;
+}
+```
+```bash
+$ zig test test_comptime_remainder_division_by_zero.zig
+doc/langref/test_comptime_remainder_division_by_zero.zig:4:19: error: division by zero here causes undefined behavior
+    const c = a % b;
+                  ^
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var a: u32 = 10;
+    var b: u32 = 0;
+    _ = .{ &a, &b };
+    const c = a % b;
+    std.debug.print("value: {}\n", .{c});
+}
+```
+```bash
+$ zig build-exe runtime_remainder_division_by_zero.zig
+$ ./runtime_remainder_division_by_zero
+thread 3570535 panic: division by zero
+/home/andy/src/zig/doc/langref/runtime_remainder_division_by_zero.zig:7:17: 0x10351f6 in main (runtime_remainder_division_by_zero)
+    const c = a % b;
+                ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034a49 in posixCallMainAndExit (runtime_remainder_division_by_zero)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10345b1 in _start (runtime_remainder_division_by_zero)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Exact Division Remainder
+
+Во время компиляции:
+
+```zig
+comptime {
+    const a: u32 = 10;
+    const b: u32 = 3;
+    const c = @divExact(a, b);
+    _ = c;
+}
+```
+```bash
+$ zig test test_comptime_divExact_remainder.zig
+doc/langref/test_comptime_divExact_remainder.zig:4:15: error: exact division produced remainder
+    const c = @divExact(a, b);
+              ^~~~~~~~~~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var a: u32 = 10;
+    var b: u32 = 3;
+    _ = .{ &a, &b };
+    const c = @divExact(a, b);
+    std.debug.print("value: {}\n", .{c});
+}
+```
+```bash
+$ zig build-exe runtime_divExact_remainder.zig
+$ ./runtime_divExact_remainder
+thread 3570103 panic: exact division produced remainder
+/home/andy/src/zig/doc/langref/runtime_divExact_remainder.zig:7:15: 0x103526b in main (runtime_divExact_remainder)
+    const c = @divExact(a, b);
+              ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034a89 in posixCallMainAndExit (runtime_divExact_remainder)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10345f1 in _start (runtime_divExact_remainder)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Attempt to Unwrap Null
+
+Во время компиляции:
+
+```zig
+comptime {
+    const optional_number: ?i32 = null;
+    const number = optional_number.?;
+    _ = number;
+}
+```
+```bash
+$ zig test test_comptime_unwrap_null.zig
+doc/langref/test_comptime_unwrap_null.zig:3:35: error: unable to unwrap null
+    const number = optional_number.?;
+                   ~~~~~~~~~~~~~~~^~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    var optional_number: ?i32 = null;
+    _ = &optional_number;
+    const number = optional_number.?;
+    std.debug.print("value: {}\n", .{number});
+}
+```
+```bash
+$ zig build-exe runtime_unwrap_null.zig
+$ ./runtime_unwrap_null
+thread 3570514 panic: attempt to use null value
+/home/andy/src/zig/doc/langref/runtime_unwrap_null.zig:6:35: 0x1035272 in main (runtime_unwrap_null)
+const number = optional_number.?;
+^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034ad9 in posixCallMainAndExit (runtime_unwrap_null)
+root.main();
+^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034641 in _start (runtime_unwrap_null)
+asm volatile (switch (native_arch) {
+^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Один из способов избежать этого сбоя - проверить наличие `null` вместо того, чтобы предполагать значение отличное от
+`null` с помощью выражения `if`:
+
+```zig
+const print = @import("std").debug.print;
+pub fn main() void {
+    const optional_number: ?i32 = null;
+
+    if (optional_number) |number| {
+        print("got number: {}\n", .{number});
+    } else {
+        print("it's null\n", .{});
+    }
+}
+```
+```bash
+$ zig build-exe testing_null_with_if.zig
+$ ./testing_null_with_if
+it's null
+```
+
+#### Attempt to Unwrap Error
+
+Во время компиляции:
+
+```zig
+comptime {
+    const number = getNumberOrFail() catch unreachable;
+    _ = number;
+}
+
+fn getNumberOrFail() !i32 {
+    return error.UnableToReturnNumber;
+}
+```
+```bash
+$ zig test test_comptime_unwrap_error.zig
+doc/langref/test_comptime_unwrap_error.zig:2:44: error: caught unexpected error 'UnableToReturnNumber'
+    const number = getNumberOrFail() catch unreachable;
+                                           ^~~~~~~~~~~
+doc/langref/test_comptime_unwrap_error.zig:7:18: note: error returned here
+    return error.UnableToReturnNumber;
+                 ^~~~~~~~~~~~~~~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    const number = getNumberOrFail() catch unreachable;
+    std.debug.print("value: {}\n", .{number});
+}
+
+fn getNumberOrFail() !i32 {
+    return error.UnableToReturnNumber;
+}
+```
+```bash
+$ zig build-exe runtime_unwrap_error.zig
+$ ./runtime_unwrap_error
+thread 3577877 panic: attempt to unwrap error: UnableToReturnNumber
+/home/andy/src/zig/doc/langref/runtime_unwrap_error.zig:9:5: 0x103738f in getNumberOrFail (runtime_unwrap_error)
+    return error.UnableToReturnNumber;
+    ^
+/home/andy/src/zig/doc/langref/runtime_unwrap_error.zig:4:44: 0x1035301 in main (runtime_unwrap_error)
+    const number = getNumberOrFail() catch unreachable;
+                                           ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034b49 in posixCallMainAndExit (runtime_unwrap_error)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10346b1 in _start (runtime_unwrap_error)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Один из способов избежать этого сбоя - проверить наличие ошибки вместо того чтобы предполагать успешный результат с
+помощью выражения `if`:
+
+```zig
+const print = @import("std").debug.print;
+
+pub fn main() void {
+    const result = getNumberOrFail();
+
+    if (result) |number| {
+        print("got number: {}\n", .{number});
+    } else |err| {
+        print("got error: {s}\n", .{@errorName(err)});
+    }
+}
+
+fn getNumberOrFail() !i32 {
+    return error.UnableToReturnNumber;
+}
+```
+```bash
+$ zig build-exe testing_error_with_if.zig
+$ ./testing_error_with_if
+got error: UnableToReturnNumber
+```
+
+#### Invalid Error Code
+
+Во время компиляции:
+
+```zig
+comptime {
+    const err = error.AnError;
+    const number = @intFromError(err) + 10;
+    const invalid_err = @errorFromInt(number);
+    _ = invalid_err;
+}
+```
+```bash
+$ zig test test_comptime_invalid_error_code.zig
+doc/langref/test_comptime_invalid_error_code.zig:4:39: error: integer value '11' represents no error
+    const invalid_err = @errorFromInt(number);
+                                      ^~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+pub fn main() void {
+    const err = error.AnError;
+    var number = @intFromError(err) + 500;
+    _ = &number;
+    const invalid_err = @errorFromInt(number);
+    std.debug.print("value: {}\n", .{invalid_err});
+}
+```
+```bash
+$ zig build-exe runtime_invalid_error_code.zig
+$ ./runtime_invalid_error_code
+thread 3570441 panic: invalid error code
+/home/andy/src/zig/doc/langref/runtime_invalid_error_code.zig:7:5: 0x10352a0 in main (runtime_invalid_error_code)
+    const invalid_err = @errorFromInt(number);
+    ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034ae9 in posixCallMainAndExit (runtime_invalid_error_code)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034651 in _start (runtime_invalid_error_code)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Invalid Enum Cast
+
+Во время компиляции:
+
+```zig
+const Foo = enum {
+    a,
+    b,
+    c,
+};
+comptime {
+    const a: u2 = 3;
+    const b: Foo = @enumFromInt(a);
+    _ = b;
+}
+```
+```bash
+$ zig test test_comptime_invalid_enum_cast.zig
+doc/langref/test_comptime_invalid_enum_cast.zig:8:20: error: enum 'test_comptime_invalid_enum_cast.Foo' has no tag with value '3'
+    const b: Foo = @enumFromInt(a);
+                   ^~~~~~~~~~~~~~~
+doc/langref/test_comptime_invalid_enum_cast.zig:1:13: note: enum declared here
+const Foo = enum {
+            ^~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+const Foo = enum {
+    a,
+    b,
+    c,
+};
+
+pub fn main() void {
+    var a: u2 = 3;
+    _ = &a;
+    const b: Foo = @enumFromInt(a);
+    std.debug.print("value: {s}\n", .{@tagName(b)});
+}
+```
+```bash
+$ zig build-exe runtime_invalid_enum_cast.zig
+$ ./runtime_invalid_enum_cast
+thread 3568027 panic: invalid enum value
+/home/andy/src/zig/doc/langref/runtime_invalid_enum_cast.zig:12:20: 0x1035297 in main (runtime_invalid_enum_cast)
+    const b: Foo = @enumFromInt(a);
+                   ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034af9 in posixCallMainAndExit (runtime_invalid_enum_cast)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034661 in _start (runtime_invalid_enum_cast)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Invalid Error Set Cast
+
+Во время компиляции:
+
+```zig
+const Set1 = error{
+    A,
+    B,
+};
+const Set2 = error{
+    A,
+    C,
+};
+comptime {
+    _ = @as(Set2, @errorCast(Set1.B));
+}
+```
+```bash
+$ zig test test_comptime_invalid_error_set_cast.zig
+doc/langref/test_comptime_invalid_error_set_cast.zig:10:19: error: 'error.B' not a member of error set 'error{A,C}'
+    _ = @as(Set2, @errorCast(Set1.B));
+                  ^~~~~~~~~~~~~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+const Set1 = error{
+    A,
+    B,
+};
+const Set2 = error{
+    A,
+    C,
+};
+pub fn main() void {
+    foo(Set1.B);
+}
+fn foo(set1: Set1) void {
+    const x: Set2 = @errorCast(set1);
+    std.debug.print("value: {}\n", .{x});
+}
+```
+```bash
+$ zig build-exe runtime_invalid_error_set_cast.zig
+$ ./runtime_invalid_error_set_cast
+thread 3568026 panic: invalid error code
+/home/andy/src/zig/doc/langref/runtime_invalid_error_set_cast.zig:15:21: 0x1037317 in foo (runtime_invalid_error_set_cast)
+    const x: Set2 = @errorCast(set1);
+                    ^
+/home/andy/src/zig/doc/langref/runtime_invalid_error_set_cast.zig:12:8: 0x103523d in main (runtime_invalid_error_set_cast)
+    foo(Set1.B);
+       ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034ae9 in posixCallMainAndExit (runtime_invalid_error_set_cast)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034651 in _start (runtime_invalid_error_set_cast)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Incorrect Pointer Alignment
+
+Во время компиляции:
+
+```zig
+comptime {
+    const ptr: *align(1) i32 = @ptrFromInt(0x1);
+    const aligned: *align(4) i32 = @alignCast(ptr);
+    _ = aligned;
+}
+```
+```bash
+$ zig test test_comptime_incorrect_pointer_alignment.zig
+doc/langref/test_comptime_incorrect_pointer_alignment.zig:3:47: error: pointer address 0x1 is not aligned to 4 bytes
+    const aligned: *align(4) i32 = @alignCast(ptr);
+                                              ^~~
+```
+
+Во время выполнения:
+
+```zig
+const mem = @import("std").mem;
+pub fn main() !void {
+    var array align(4) = [_]u32{ 0x11111111, 0x11111111 };
+    const bytes = mem.sliceAsBytes(array[0..]);
+    if (foo(bytes) != 0x11111111) return error.Wrong;
+}
+fn foo(bytes: []u8) u32 {
+    const slice4 = bytes[1..5];
+    const int_slice = mem.bytesAsSlice(u32, @as([]align(4) u8, @alignCast(slice4)));
+    return int_slice[0];
+}
+```
+```bash
+$ zig build-exe runtime_incorrect_pointer_alignment.zig
+$ ./runtime_incorrect_pointer_alignment
+thread 3570122 panic: incorrect alignment
+/home/andy/src/zig/doc/langref/runtime_incorrect_pointer_alignment.zig:9:64: 0x1034f0a in foo (runtime_incorrect_pointer_alignment)
+    const int_slice = mem.bytesAsSlice(u32, @as([]align(4) u8, @alignCast(slice4)));
+                                                               ^
+/home/andy/src/zig/doc/langref/runtime_incorrect_pointer_alignment.zig:5:12: 0x1034dc7 in main (runtime_incorrect_pointer_alignment)
+    if (foo(bytes) != 0x11111111) return error.Wrong;
+           ^
+/home/andy/src/zig/lib/std/start.zig:524:37: 0x1034cc5 in posixCallMainAndExit (runtime_incorrect_pointer_alignment)
+            const result = root.main() catch |err| {
+                                    ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x10347e1 in _start (runtime_incorrect_pointer_alignment)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Wrong Union Field Access
+
+Во время компиляции:
+
+```zig
+comptime {
+    var f = Foo{ .int = 42 };
+    f.float = 12.34;
+}
+
+const Foo = union {
+    float: f32,
+    int: u32,
+};
+```
+```bash
+$ zig test test_comptime_wrong_union_field_access.zig
+doc/langref/test_comptime_wrong_union_field_access.zig:3:6: error: access of union field 'float' while field 'int' is active
+    f.float = 12.34;
+    ~^~~~~~
+doc/langref/test_comptime_wrong_union_field_access.zig:6:13: note: union declared here
+const Foo = union {
+            ^~~~~
+```
+
+Во время выполнения:
+
+```zig
+const std = @import("std");
+
+const Foo = union {
+    float: f32,
+    int: u32,
+};
+
+pub fn main() void {
+    var f = Foo{ .int = 42 };
+    bar(&f);
+}
+
+fn bar(f: *Foo) void {
+    f.float = 12.34;
+    std.debug.print("value: {}\n", .{f.float});
+}
+```
+```bash
+$ zig build-exe runtime_wrong_union_field_access.zig
+$ ./runtime_wrong_union_field_access
+thread 3578787 panic: access of union field 'float' while field 'int' is active
+/home/andy/src/zig/doc/langref/runtime_wrong_union_field_access.zig:14:6: 0x103cd20 in bar (runtime_wrong_union_field_access)
+    f.float = 12.34;
+     ^
+/home/andy/src/zig/doc/langref/runtime_wrong_union_field_access.zig:10:8: 0x103ac5c in main (runtime_wrong_union_field_access)
+    bar(&f);
+       ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x103a4f9 in posixCallMainAndExit (runtime_wrong_union_field_access)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x103a061 in _start (runtime_wrong_union_field_access)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+Эта система безопасности недоступна для `extern` или `packed` объединений.
+
+Чтобы изменить активное поле объединения, назначьте все объединение следующим образом:
+
+```zig
+const std = @import("std");
+
+const Foo = union {
+    float: f32,
+    int: u32,
+};
+
+pub fn main() void {
+    var f = Foo{ .int = 42 };
+    bar(&f);
+}
+
+fn bar(f: *Foo) void {
+    f.* = Foo{ .float = 12.34 };
+    std.debug.print("value: {}\n", .{f.float});
+}
+```
+```bash
+$ zig build-exe change_active_union_field.zig
+$ ./change_active_union_field
+value: 1.234e1
+```
+
+Чтобы изменить активное поле объединения если значимое значение для этого поля неизвестно, используйте `undefined`,
+например, следующим образом:
+
+```zig
+const std = @import("std");
+
+const Foo = union {
+    float: f32,
+    int: u32,
+};
+
+pub fn main() void {
+    var f = Foo{ .int = 42 };
+    f = Foo{ .float = undefined };
+    bar(&f);
+    std.debug.print("value: {}\n", .{f.float});
+}
+
+fn bar(f: *Foo) void {
+    f.float = 12.34;
+}
+```
+```bash
+$ zig build-exe undefined_active_union_field.zig
+$ ./undefined_active_union_field
+value: 1.234e1
+```
+
+#### Out of Bounds Float to Integer Cast
+
+Это происходит при преобразовании значения с плавающей запятой в целое число, где значение с плавающей запятой находится
+за пределами диапазона целочисленного типа.
+
+Во время компиляции:
+
+```zig
+comptime {
+    const float: f32 = 4294967296;
+    const int: i32 = @intFromFloat(float);
+    _ = int;
+}
+```
+```bash
+$ zig test test_comptime_out_of_bounds_float_to_integer_cast.zig
+doc/langref/test_comptime_out_of_bounds_float_to_integer_cast.zig:3:36: error: float value '4294967296' cannot be stored in integer type 'i32'
+    const int: i32 = @intFromFloat(float);
+                                   ^~~~~
+```
+
+Во время выполнения:
+
+```zig
+pub fn main() void {
+    var float: f32 = 4294967296; // runtime-known
+    _ = &float;
+    const int: i32 = @intFromFloat(float);
+    _ = int;
+}
+```
+```bash
+$ zig build-exe runtime_out_of_bounds_float_to_integer_cast.zig
+$ ./runtime_out_of_bounds_float_to_integer_cast
+thread 3570320 panic: integer part of floating point value out of bounds
+/home/andy/src/zig/doc/langref/runtime_out_of_bounds_float_to_integer_cast.zig:4:22: 0x1035169 in main (runtime_out_of_bounds_float_to_integer_cast)
+    const int: i32 = @intFromFloat(float);
+                     ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x10349a9 in posixCallMainAndExit (runtime_out_of_bounds_float_to_integer_cast)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034511 in _start (runtime_out_of_bounds_float_to_integer_cast)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+
+#### Pointer Cast Invalid Null
+
+Это происходит при преобразовании указателя с адресом 0 в указатель который может не иметь адреса 0. Например,
+указатели C, опциональные указатели и указатели `allowzero` допускают нулевой адрес, а обычные указатели - нет.
+
+Во время компиляции:
+
+```zig
+comptime {
+    const opt_ptr: ?*i32 = null;
+    const ptr: *i32 = @ptrCast(opt_ptr);
+    _ = ptr;
+}
+```
+```bash
+$ zig test test_comptime_invalid_null_pointer_cast.zig
+doc/langref/test_comptime_invalid_null_pointer_cast.zig:3:32: error: null pointer casted to type '*i32'
+    const ptr: *i32 = @ptrCast(opt_ptr);
+                               ^~~~~~~
+```
+
+Во время выполнения:
+
+```zig
+pub fn main() void {
+    var opt_ptr: ?*i32 = null;
+    _ = &opt_ptr;
+    const ptr: *i32 = @ptrCast(opt_ptr);
+    _ = ptr;
+}
+```
+```bash
+$ zig build-exe runtime_invalid_null_pointer_cast.zig
+$ ./runtime_invalid_null_pointer_cast
+thread 3572791 panic: cast causes pointer to be null
+/home/andy/src/zig/doc/langref/runtime_invalid_null_pointer_cast.zig:4:23: 0x10350bc in main (runtime_invalid_null_pointer_cast)
+    const ptr: *i32 = @ptrCast(opt_ptr);
+                      ^
+/home/andy/src/zig/lib/std/start.zig:514:22: 0x1034929 in posixCallMainAndExit (runtime_invalid_null_pointer_cast)
+            root.main();
+                     ^
+/home/andy/src/zig/lib/std/start.zig:266:5: 0x1034491 in _start (runtime_invalid_null_pointer_cast)
+    asm volatile (switch (native_arch) {
+    ^
+???:?:?: 0x0 in ??? (???)
+(process terminated by signal)
+```
+------------
