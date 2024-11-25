@@ -11488,3 +11488,434 @@ Zig Build для объявления и настройки артефактов
 На данный момент документация по системе сборки размещена на внешнем сервере: Документация по системе сборки
 
 ------------
+### C
+
+Хотя Zig не зависит от C и в отличие от большинства других языков, не зависит от libc, Zig признает важность
+взаимодействия с существующим кодом на C.
+
+Существует несколько способов с помощью которых Zig облегчает взаимодействие с C.
+
+#### C Type Primitives
+
+Они гарантированно совместимы с C ABI и могут использоваться как любой другой тип.
+
+- `c_char`
+- `c_short`
+- `c_ushort`
+- `c_int`
+- `c_uint`
+- `c_long`
+- `c_ulong`
+- `c_longlong`
+- `c_ulonglong`
+- `c_longdouble`
+
+Чтобы взаимодействовать с типом C void, используйте `anyopaque`.
+
+#### Import from C Header File
+
+Встроенную функцию `@cImport` можно использовать для прямого импорта символов из h-файлов:
+
+```zig
+const c = @cImport({
+    // See https://github.com/ziglang/zig/issues/515
+    @cDefine("_NO_CRT_STDIO_INLINE", "1");
+    @cInclude("stdio.h");
+});
+pub fn main() void {
+    _ = c.printf("hello\n");
+}
+```
+```zig
+$ zig build-exe cImport_builtin.zig -lc
+$ ./cImport_builtin
+hello
+```
+
+Функция `@cImport` принимает выражение в качестве параметра. Это выражение вычисляется во время компиляции и
+используется для управления директивами препроцессора и включения нескольких h-файлов:
+
+```zig
+const builtin = @import("builtin");
+
+const c = @cImport({
+    @cDefine("NDEBUG", builtin.mode == .ReleaseFast);
+    if (something) {
+        @cDefine("_GNU_SOURCE", {});
+    }
+    @cInclude("stdlib.h");
+    if (something) {
+        @cUndef("_GNU_SOURCE");
+    }
+    @cInclude("soundio.h");
+});
+```
+
+#### C Translation CLI
+
+Функция перевода C в Zig доступна в качестве инструмента интерфейса командной строки через `zig translate-c`. Для этого
+требуется одно имя файла в качестве аргумента. Также может использоваться набор необязательных флагов которые
+передаются в clang. Переведенный файл записывается в стандартный вывод.
+
+
+##### Command line flags
+
+- `-I`: Укажите каталог для поиска включаемых файлов. Может использоваться несколько раз. Аналогично флагу clang -I.
+Текущий каталог по умолчанию не включен; используйте -I чтобы включить его.
+- `-D`: Определяет макрос препроцессора. Эквивалентно флагу clang -D.
+- `-cflags [flags] --`: Передайте clang произвольные дополнительные флаги командной строки. Примечание: список флагов
+должен заканчиваться символом --
+- `-target` Целевая тройка для транслированного кода Zig. Если цель не указана, будет использоваться текущая цель хоста.
+
+##### Using -target and -cflags
+
+**Важно!** При переводе кода на C с помощью `zig translate-c` вы **должны** использовать ту же тройку целей которую вы
+будете использовать при компиляции транслированного кода. Кроме того, вы должны убедиться, что используемые `-cflags`
+если таковые имеются, соответствуют cflags используемым кодом в целевой системе. Использование неправильных флагов
+`-target` или `-cflags` может привести к сбоям синтаксического анализа clang или Zig, а также к незначительной
+несовместимости ABI при компоновке с кодом на C.
+
+```c
+long FOO = __LONG_MAX__;
+```
+```bash
+$ zig translate-c -target thumb-freestanding-gnueabihf varytarget.h|grep FOO
+pub export var FOO: c_long = 2147483647;
+$ zig translate-c -target x86_64-macos-gnu varytarget.h|grep FOO
+pub export var FOO: c_long = 9223372036854775807;
+```
+```c
+enum FOO { BAR };
+int do_something(enum FOO foo);
+```
+```bash
+$ zig translate-c varycflags.h|grep -B1 do_something
+pub const enum_FOO = c_uint;
+pub extern fn do_something(foo: enum_FOO) c_int;
+$ zig translate-c -cflags -fshort-enums -- varycflags.h|grep -B1 do_something
+pub const enum_FOO = u8;
+pub extern fn do_something(foo: enum_FOO) c_int;
+```
+
+##### @cImport vs translate-c
+
+`@cImport` и `zig translate-c` используют одни и те же базовые функции перевода с языка C, поэтому на техническом
+уровне они эквивалентны. На практике `@cImport` полезен как способ быстрого и простого доступа к числовым константам,
+определениям типов и типам записей без необходимости какой-либо дополнительной настройки. Если вам нужно передать
+`cflags` в clang или вы хотите отредактировать транслированный код, рекомендуется использовать `zig translate-c` и
+сохранить результаты в файл. Распространенные причины для редактирования сгенерированного кода включают в себя:
+изменение параметров `anytype` в функционально-подобных макросах на более конкретные типы; изменение указателей `[*c]T`
+на `[*]T` или `*T` для повышения безопасности типов; а также включение или отключение безопасности во время выполнения в
+определенных функциях.
+
+
+#### C Translation Caching
+
+Функция трансляции C (независимо от того, используется ли она через `zig translate-c` или `@cImport`) интегрируется с
+системой кэширования Zig. При последующих запусках с тем же исходным файлом, целевым объектом и `cflags` будет
+использоваться кэш вместо повторного перевода одного и того же кода.
+
+Чтобы увидеть, где хранятся кэшированные файлы при компиляции кода, использующего `@cImport`, используйте флаг
+`--verbose-cimport`:
+
+```zig
+const c = @cImport({
+    @cDefine("_NO_CRT_STDIO_INLINE", "1");
+    @cInclude("stdio.h");
+});
+pub fn main() void {
+    _ = c;
+}
+```
+```bash
+$ zig build-exe verbose_cimport_flag.zig -lc --verbose-cimport
+info(compilation): C import source: /home/andy/src/zig/.zig-cache/o/f4e9c68cba40c97888f064d67b031021/cimport.h
+info(compilation): C import .d file: /home/andy/src/zig/.zig-cache/o/f4e9c68cba40c97888f064d67b031021/cimport.h.d
+info(compilation): C import output: /home/andy/src/zig/.zig-cache/o/1b63455e1d0d323f51bdc4909717e28b/cimport.zig
+$ ./verbose_cimport_flag
+```
+
+`cimport.h` содержит файл для трансляции (созданный на основе вызовов `@cInclude`, `@cDefine` и `@cUndef`), `cimport.h.d`
+- это список зависимостей файлов, а `cimport.zig` содержит транслированные выходные данные.
+
+
+#### Translation failures
+
+Некоторые конструкции языка С не могут быть переведены в Zig - например, _goto_, структуры с битовыми полями и макросы
+для вставки токенов. В Zig используется понижение, позволяющее продолжить трансляцию при наличии нетранслируемых
+объектов.
+
+Разновидностей понижения три - `opaque`, _extern_, и `@compileError`. Структуры и объединения языка С которые не могут
+быть транслированы правильно, будут транслированы как `opaque{}`. Функции содержащие непрозрачные типы или конструкции
+кода которые невозможно транслировать будут понижены до `extern` объявления. Таким образом, нетранслируемые типы все еще
+могут использоваться в качестве указателей, а нетранслируемые функции могут вызываться до тех пор, пока компоновщик
+знает о скомпилированной функции.
+
+`@compileError` используется, когда определения верхнего уровня (глобальные переменные, прототипы функций, макросы) не
+могут быть транслированы или понижены. Поскольку Zig использует отложенный анализ для объявлений верхнего
+уровня, нетранслируемые объекты не вызовут ошибки компиляции в вашем коде, если вы на самом деле их не используете.
+
+
+#### C Macros
+
+При переводе с языка C делается все возможное чтобы перевести функционально-подобные макросы в эквивалентные
+Zig-функции. Поскольку макросы на языке C работают на уровне лексических единиц, не все макросы на языке C могут быть
+переведены на Zig. Макросы которые не могут быть переведены будут переведены в `@compileError`. Обратите внимание, что
+код на C который использует макросы будет транслирован без каких-либо дополнительных проблем (поскольку Zig работает с
+предварительно обработанным исходным кодом с расширенными макросами). Это просто сами макросы которые могут быть
+недоступны для трансляции в Zig.
+
+Рассмотрим следующий пример:
+
+```c
+#define MAKELOCAL(NAME, INIT) int NAME = INIT
+int foo(void) {
+   MAKELOCAL(a, 1);
+   MAKELOCAL(b, 2);
+   return a + b;
+}
+```
+```bash
+$ zig translate-c macro.c > macro.zig
+```
+```zig
+pub export fn foo() c_int {
+    var a: c_int = 1;
+    _ = &a;
+    var b: c_int = 2;
+    _ = &b;
+    return a + b;
+}
+pub const MAKELOCAL = @compileError("unable to translate C expr: unexpected token .Equal"); // macro.c:1:9
+```
+
+Обратите внимание, что `foo` был транслирован правильно, несмотря на использование непереводимого макроса. Значение
+`MAKELOCAL` было изменено на `@compileError`, поскольку оно не может быть выражено как функция Zig; это просто означает,
+что вы не можете напрямую использовать `MAKELOCAL` из Zig.
+
+
+#### C Pointers
+
+Этого типа следует избегать когда это возможно. Единственная веская причина для использования указателя на C
+заключается в автоматически сгенерированном коде при трансляции кода на C.
+
+При импорте файлов заголовков на языке С неясно, следует ли переводить указатели как одноэлементные (`*T`) или как
+многоэлементные (`[*]T`). Указатели на языке C являются компромиссным решением, позволяющим Zig-коду напрямую
+использовать транслированные файлы заголовков.
+
+`[*c]T` - Указатель C.
+
+- Поддерживает весь синтаксис двух других типов указателей (`*T`) и (`[*]T`).
+- Приводит к другим типам указателей, а также к опциональным указателям. Когда указатель С преобразуется в
+опциональный указатель происходит неопределенное поведение с проверкой безопасности, если адрес равен 0.
+- Разрешает адрес 0. На несвободных объектах разыменование адреса 0 является неопределенным поведением с проверкой
+безопасности. Опциональные указатели C вводят еще один бит для отслеживания нуля, как и `?usize`. Обратите внимание, что
+создание опционального указателя C не требуется, так как можно использовать обычные опциональные указатели.
+- Поддерживает приведение типов к целым числам и из них.
+- Поддерживает сравнение с целыми числами.
+- Не поддерживает атрибуты указателей только для Zig, такие как выравнивание. Используйте обычные указатели, пожалуйста!
+
+Когда указатель C указывает на отдельную структуру (не массив), разыменуйте указатель C, чтобы получить доступ к полям
+структуры или данным-элементам. Этот синтаксис выглядит следующим образом:
+
+`ptr_to_struct.*.struct_member`
+
+Это сравнимо с выполнением `->` в C.
+
+Когда указатель C указывает на массив структур, синтаксис возвращается к следующему:
+
+`ptr_to_struct_array[index].struct_member`
+
+
+#### C Variadic Functions
+
+Zig поддерживает внешние переменные функции.
+
+```zig
+const std = @import("std");
+const testing = std.testing;
+
+pub extern "c" fn printf(format: [*:0]const u8, ...) c_int;
+
+test "variadic function" {
+    try testing.expect(printf("Hello, world!\n") == 14);
+    try testing.expect(@typeInfo(@TypeOf(printf)).Fn.is_var_args);
+}
+```
+```bash
+$ zig test test_variadic_function.zig -lc
+1/1 test_variadic_function.test.variadic function...OK
+All 1 tests passed.
+Hello, world!
+```
+
+Функции с переменным количеством аргументов могут быть реализованы с помощью `@cVaStart`, `@cVaEnd`, `@cVaArg` и
+`@cVaCopy`.
+
+```zig
+const std = @import("std");
+const testing = std.testing;
+const builtin = @import("builtin");
+
+fn add(count: c_int, ...) callconv(.C) c_int {
+    var ap = @cVaStart();
+    defer @cVaEnd(&ap);
+    var i: usize = 0;
+    var sum: c_int = 0;
+    while (i < count) : (i += 1) {
+        sum += @cVaArg(&ap, c_int);
+    }
+    return sum;
+}
+
+test "defining a variadic function" {
+    if (builtin.cpu.arch == .aarch64 and builtin.os.tag != .macos) {
+        // https://github.com/ziglang/zig/issues/14096
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch == .x86_64 and builtin.os.tag == .windows) {
+        // https://github.com/ziglang/zig/issues/16961
+        return error.SkipZigTest;
+    }
+
+    try std.testing.expectEqual(@as(c_int, 0), add(0));
+    try std.testing.expectEqual(@as(c_int, 1), add(1, @as(c_int, 1)));
+    try std.testing.expectEqual(@as(c_int, 3), add(2, @as(c_int, 1), @as(c_int, 2)));
+}
+```
+```bash
+$ zig test test_defining_variadic_function.zig
+1/1 test_defining_variadic_function.test.defining a variadic function...OK
+All 1 tests passed.
+```
+
+
+#### Exporting a C Library
+
+Одним из основных вариантов использования Zig является экспорт библиотеки с помощью C ABI для использования в других
+языках программирования. Ключевое слово `export` перед функциями, переменными и типами делает их частью библиотечного API:
+
+```zig
+export fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+```
+
+Чтобы создать статическую библиотеку:
+
+```bash
+$ zig build-lib mathtest.zig
+```
+
+Чтобы создать общую библиотеку:
+
+```bash
+$ zig build-lib mathtest.zig -dynamic
+```
+
+Вот пример с системой сборки Zig:
+
+```c
+// This header is generated by zig from mathtest.zig
+#include "mathtest.h"
+#include <stdio.h>
+
+int main(int argc, char **argv) {
+    int32_t result = add(42, 1337);
+    printf("%d\n", result);
+    return 0;
+}
+```
+```zig
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const lib = b.addSharedLibrary(.{
+        .name = "mathtest",
+        .root_source_file = b.path("mathtest.zig"),
+        .version = .{ .major = 1, .minor = 0, .patch = 0 },
+    });
+    const exe = b.addExecutable(.{
+        .name = "test",
+    });
+    exe.addCSourceFile(.{ .file = b.path("test.c"), .flags = &.{"-std=c99"} });
+    exe.linkLibrary(lib);
+    exe.linkSystemLibrary("c");
+
+    b.default_step.dependOn(&exe.step);
+
+    const run_cmd = exe.run();
+
+    const test_step = b.step("test", "Test the program");
+    test_step.dependOn(&run_cmd.step);
+}
+```
+```bash
+$ zig build test
+1379
+```
+
+
+#### Mixing Object Files
+
+Вы можете смешивать объектные файлы Zig с любыми другими объектными файлами которые соответствуют C ABI. Пример:
+
+```zig
+const base64 = @import("std").base64;
+
+export fn decode_base_64(
+    dest_ptr: [*]u8,
+    dest_len: usize,
+    source_ptr: [*]const u8,
+    source_len: usize,
+) usize {
+    const src = source_ptr[0..source_len];
+    const dest = dest_ptr[0..dest_len];
+    const base64_decoder = base64.standard.Decoder;
+    const decoded_size = base64_decoder.calcSizeForSlice(src) catch unreachable;
+    base64_decoder.decode(dest[0..decoded_size], src) catch unreachable;
+    return decoded_size;
+}
+```
+```c
+// This header is generated by zig from base64.zig
+#include "base64.h"
+
+#include <string.h>
+#include <stdio.h>
+
+int main(int argc, char **argv) {
+    const char *encoded = "YWxsIHlvdXIgYmFzZSBhcmUgYmVsb25nIHRvIHVz";
+    char buf[200];
+
+    size_t len = decode_base_64(buf, 200, encoded, strlen(encoded));
+    buf[len] = 0;
+    puts(buf);
+
+    return 0;
+}
+```
+```zig
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const obj = b.addObject(.{
+        .name = "base64",
+        .root_source_file = b.path("base64.zig"),
+    });
+
+    const exe = b.addExecutable(.{
+        .name = "test",
+    });
+    exe.addCSourceFile(.{ .file = b.path("test.c"), .flags = &.{"-std=c99"} });
+    exe.addObject(obj);
+    exe.linkSystemLibrary("c");
+    b.installArtifact(exe);
+}
+```
+```bash
+$ zig build
+$ ./zig-out/bin/test
+all your base are belong to us
+```
+------------
