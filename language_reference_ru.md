@@ -11918,4 +11918,105 @@ $ zig build
 $ ./zig-out/bin/test
 all your base are belong to us
 ```
+
+------------
+### WebAssembly
+
+Zig поддерживает сборку для WebAssembly "из коробки".
+
+#### Freestanding
+
+Для таких хост-сред, как веб-браузер и nodejs, сборка выполняется в виде исполняемого файла с использованием автономной
+целевой операционной системы. Вот пример запуска кода Zig, скомпилированного в WebAssembly с помощью nodejs.
+
+```zig
+extern fn print(i32) void;
+
+export fn add(a: i32, b: i32) void {
+    print(a + b);
+}
+```
+```bash
+$ zig build-exe math.zig -target wasm32-freestanding -fno-entry --export=add
+```
+```js
+const fs = require('fs');
+const source = fs.readFileSync("./math.wasm");
+const typedArray = new Uint8Array(source);
+
+WebAssembly.instantiate(typedArray, {
+  env: {
+    print: (result) => { console.log(`The result is ${result}`); }
+  }}).then(result => {
+  const add = result.instance.exports.add;
+  add(1, 2);
+});
+```
+```bash
+$ node test.js
+The result is 3
+```
+
+#### WASI
+
+Поддержка Zig системного интерфейса WebAssembly (WASI) находится в стадии активной разработки. Пример использования
+стандартной библиотеки и чтения аргументов командной строки:
+
+```zig
+const std = @import("std");
+
+pub fn main() !void {
+    var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = general_purpose_allocator.allocator();
+    const args = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, args);
+
+    for (args, 0..) |arg, i| {
+        std.debug.print("{}: {s}\n", .{ i, arg });
+    }
+}
+```
+```bash
+$ zig build-exe wasi_args.zig -target wasm32-wasi
+```
+```bash
+$ wasmtime wasi_args.wasm 123 hello
+0: wasi_args.wasm
+1: 123
+2: hello
+```
+
+Более интересным примером может быть извлечение списка предварительных открытий из среды выполнения. Теперь это
+поддерживается в стандартной библиотеке с помощью `std.fs.wasi.Preopens`:
+
+```zig
+const std = @import("std");
+const fs = std.fs;
+
+pub fn main() !void {
+    var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = general_purpose_allocator.allocator();
+
+    var arena_instance = std.heap.ArenaAllocator.init(gpa);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
+
+    const preopens = try fs.wasi.preopensAlloc(arena);
+
+    for (preopens.names, 0..) |preopen, i| {
+        std.debug.print("{}: {s}\n", .{ i, preopen });
+    }
+}
+```
+```bash
+$ zig build-exe wasi_preopens.zig -target wasm32-wasi
+```
+```bash
+$ wasmtime --dir=. wasi_preopens.wasm
+0: stdin
+1: stdout
+2: stderr
+3: .
+```
+
 ------------
